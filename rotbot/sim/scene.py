@@ -32,6 +32,7 @@ class CellLabel:
     bbox: tuple[float, float, float, float]   # (x1, y1, x2, y2)
     is_bonus: bool
     visible: bool             # 4 角是否都在畫面內且在相機前方
+    z: float = 0.0            # 格中心在相機座標的深度 (m)；>0 表示在相機前方
 
 
 @dataclass
@@ -120,7 +121,8 @@ class SceneGenerator:
             visible = bool(inside and self._last_z[i] > 0)
             labels.append(CellLabel(cell_id=i, corners=c,
                                     bbox=(float(x1), float(y1), float(x2), float(y2)),
-                                    is_bonus=(i == bonus_id), visible=visible))
+                                    is_bonus=(i == bonus_id), visible=visible,
+                                    z=float(self._last_z[i])))
         return labels
 
     # ── 繪圖 ─────────────────────────────────────────────

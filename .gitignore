@@ -1,3 +1,7 @@
+# 產生的合成資料集（勿入庫）
+datasets/
+runs/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
