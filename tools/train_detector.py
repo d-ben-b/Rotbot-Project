@@ -24,12 +24,17 @@ DEFAULT_PROJECT = str(REPO_ROOT / "runs" / "detect")
 
 def train(data_yaml: str, model: str = "yolo11n.pt", epochs: int = 100,
           imgsz: int = 960, batch: int | float = -1, device: str = "0",
-          project: str = DEFAULT_PROJECT, name: str = "grid_holes"):
-    """跑訓練，回傳 ultralytics 的 results。batch=-1 讓 ultralytics 自動抓 VRAM。"""
+          project: str = DEFAULT_PROJECT, name: str = "grid_holes",
+          workers: int = 2):
+    """跑訓練，回傳 ultralytics 的 results。batch=-1 讓 ultralytics 自動抓 VRAM。
+
+    workers 調低 + cache=False：避免 1920×1080 大圖 × 多 worker × mosaic 把系統 RAM 吃爆。
+    """
     from ultralytics import YOLO   # 延後 import：無 GPU/未安裝環境不受影響
     m = YOLO(model)
     return m.train(data=data_yaml, epochs=epochs, imgsz=imgsz, batch=batch,
-                   device=device, project=project, name=name, plots=True)
+                   device=device, project=project, name=name, plots=True,
+                   workers=workers, cache=False)
 
 
 def main() -> None:
@@ -42,6 +47,7 @@ def main() -> None:
     ap.add_argument("--imgsz", type=int, default=960)
     ap.add_argument("--batch", type=float, default=-1, help="-1 = 自動")
     ap.add_argument("--device", default="0", help="'0'=第一張 GPU，'cpu'=CPU")
+    ap.add_argument("--workers", type=int, default=2, help="dataloader worker 數（RAM 吃緊調低）")
     args = ap.parse_args()
 
     if args.gen:
@@ -52,7 +58,8 @@ def main() -> None:
 
     batch = int(args.batch) if args.batch >= 1 else args.batch
     results = train(args.data, model=args.model, epochs=args.epochs,
-                    imgsz=args.imgsz, batch=batch, device=args.device)
+                    imgsz=args.imgsz, batch=batch, device=args.device,
+                    workers=args.workers)
     print("訓練完成。輸出：", getattr(results, "save_dir", "runs/detect/…"))
 
 
