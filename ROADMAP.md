@@ -89,11 +89,15 @@ rotbot/
 - [x] `perception/pose.py`：方法 A（孔中心整板 PnP + 表觀直徑測距）與方法 B（橢圓圓錐反投影，含傾角）
 - [x] `tools/compare_pose_methods.py`：兩法在距離/方位/傾角 vs 雜訊的比較（見 §4）
 - [x] `perception/detector.py`：Ultralytics 推論包裝 + 後處理，輸出 `Detection`（孔中心 + bbox + 類別 + 網格編號）
-- [ ] 訓練 YOLO 偵測 baseline（`tools/train_detector.py`；先小資料驗證再放大）
-- [ ] 全鏈驗證：合成影像 → detector → 孔中心 → 整板 PnP → 距離/方位
-- [ ] 評估腳本：偵測 mAP、中心像素誤差、端到端 PnP 距離誤差
+- [x] 訓練 YOLO 偵測 baseline（`tools/train_detector.py`，yolo11n，2000 圖/100ep）
+      → 驗證集 mAP50：main 0.995、bonus 0.973、bonus_lit 0.954
+- [x] 全鏈定位 `perception/localize.py`（偵測→穩健孔對應→整板 PnP→每孔瞄準）+ `sim/perfect_detector.py` 替身
+- [x] 評估腳本 `tools/eval_perception.py`
+      → 真模型端到端（50 場）：整板 PnP 45/50、亮孔 7/7、距離平均 8.3cm、方位 1.58°
 
-**DoD：** 給一張合成影像，能穩定輸出「有哪些孔、亮起的加分孔在哪、每孔的距離與方位角」。
+> 殘差精修（留待需要更高精度時）：用**橢圓中心**取代 bbox 中心（去除透視偏差、順帶方法 B 傾角）；改善少數整板 PnP 失敗場景。
+
+**DoD：** ✅ 給一張合成影像，能穩定輸出「有哪些孔、亮起的加分孔在哪、每孔的距離與方位角」。
 
 ### P2 — 決策（離線，約 2 週，可與 P1 交錯）
 - [ ] `decision/ballistics.py`：正解（角度→落點）與反解（目標→俯仰/水平/飛輪轉速），含空氣阻力
