@@ -1,6 +1,7 @@
-# 產生的合成資料集（勿入庫）
+# 產生的合成資料集 / 訓練輸出 / 模型權重（勿入庫）
 datasets/
 runs/
+*.pt
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

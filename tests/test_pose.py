@@ -1,49 +1,64 @@
 # -*- coding: utf-8 -*-
-"""PnP 位姿：真值 → 投影 → 反解，驗證幾何與程式正確。
-
-搬自 presentation/pnp_frame_pose.py 的自我驗證案例。
-"""
+"""圓孔位姿：方法 A（中心整板 PnP + 尺寸測距）與方法 B（橢圓圓錐反投影）。"""
 import numpy as np
 import pytest
 
 from rotbot.config import load_config
-from rotbot.perception.pose import project_frame_corners, solve_frame_pose
-
-FRAME = 0.40  # 網框邊長 (m)
+from rotbot.perception import pose
+from rotbot.sim.scene import SceneGenerator
 
 
 @pytest.fixture
-def K():
-    return load_config().camera.matrix()
+def cfg():
+    return load_config()
 
 
-@pytest.mark.parametrize("distance,bearing,elev,tilt", [
-    (2.50, 0.0, 0.0, 0.0),      # A. 正前方
-    (3.00, 15.0, 10.0, 0.0),    # B. 右偏 15° 仰 10°
-    (2.50, -8.0, 5.0, 25.0),    # C. 網框被打歪 25°
-])
-def test_solve_roundtrip_noise_free(K, distance, bearing, elev, tilt):
-    """無雜訊時，反解應精確還原真值。
-
-    注意：瞄準角是相機視線方向角，bearing≠0 時
-    pitch_aim = arctan(tan(elev)/cos(bearing))，並不等於 elev。
-    """
-    pts = project_frame_corners(K, FRAME, distance, bearing, elev, tilt)
-    pose = solve_frame_pose(pts, K, FRAME)
-    b, e = np.radians(bearing), np.radians(elev)
-    exp_yaw = bearing
-    exp_pitch = np.degrees(np.arctan2(np.sin(e), np.cos(b) * np.cos(e)))
-    assert pose is not None
-    assert abs(pose.distance - distance) < 1e-3
-    assert abs(pose.yaw_aim - exp_yaw) < 1e-2
-    assert abs(pose.pitch_aim - exp_pitch) < 1e-2
-    assert abs(pose.tilt - tilt) < 1e-1
-    assert pose.reproj_err < 1e-3
+# ── 方法 A：整板 PnP ──────────────────────────────────
+def test_board_pose_recovers_distance(cfg):
+    s = SceneGenerator(cfg, randomize=False).sample()
+    mains = [h for h in s.holes if h.group == "main"]
+    obj = np.array([h.center_board for h in mains])
+    img = np.array([h.center_px for h in mains])
+    bp = pose.solve_board_pose(obj, img, cfg.camera.matrix())
+    assert bp is not None
+    assert bp.reproj_err < 1.0
+    d, b, e = bp.point_aim(np.zeros(3))            # 中心主孔在板原點
+    assert abs(d - cfg.field.dist_x) < 1e-2
+    assert abs(b) < 0.5 and abs(e) < 0.5
 
 
-def test_solve_with_detection_noise(K):
-    """1.5px 偵測雜訊下，距離誤差仍在可預期的合理範圍。"""
-    pts = project_frame_corners(K, FRAME, 2.50, 0.0, 0.0, 0.0, noise_px=1.5, seed=0)
-    pose = solve_frame_pose(pts, K, FRAME)
-    assert pose is not None
-    assert abs(pose.distance - 2.50) < 0.1   # 10 cm 內
+def test_board_pose_needs_min_points(cfg):
+    obj = np.zeros((3, 3)); img = np.zeros((3, 2))
+    assert pose.solve_board_pose(obj, img, cfg.camera.matrix()) is None
+
+
+def test_distance_from_diameter(cfg):
+    fx = cfg.camera.fx
+    # 直徑 40cm、深度 2.5m → 表觀直徑 fx*0.4/2.5，反算回 2.5m
+    d_px = fx * 0.40 / 2.5
+    assert abs(pose.distance_from_diameter(d_px, 0.40, fx) - 2.5) < 1e-6
+
+
+# ── 方法 B：橢圓圓錐反投影 ─────────────────────────────
+def test_conic_pose_canonical(cfg):
+    s = SceneGenerator(cfg, randomize=False).sample()
+    center = next(h for h in s.holes if h.group == "main" and h.idx == 4)
+    cp = pose.pose_from_ellipse(center.ellipse, cfg.camera.matrix(), center.diameter / 2)
+    assert cp is not None
+    assert abs(cp.distance - cfg.field.dist_x) < 1e-2
+    assert abs(cp.tilt) < 0.5
+
+
+def test_conic_pose_matches_truth_over_views(cfg):
+    """隨機視角下（無雜訊橢圓），方法 B 應貼近真值距離與傾角。"""
+    gen = SceneGenerator(cfg, rng=np.random.default_rng(1))
+    d_err, t_err = [], []
+    for _ in range(15):
+        for h in gen.sample().holes:
+            if h.visible and h.ellipse is not None:
+                cp = pose.pose_from_ellipse(h.ellipse, cfg.camera.matrix(), h.diameter / 2)
+                if cp is not None:
+                    d_err.append(abs(cp.distance - h.distance))
+                    t_err.append(abs(cp.tilt - h.tilt))
+    assert np.median(d_err) < 0.02          # < 2 cm
+    assert np.median(t_err) < 2.0           # < 2°

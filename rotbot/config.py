@@ -24,8 +24,10 @@ class FieldConfig:
     grid_cy: float
     col_pitch: float
     row_pitch: float
-    frame_d: float
-    bonus_d: float
+    frame_d: float           # 一般圓孔直徑 (m)
+    bonus_d: float           # 加分圓孔直徑 (m)
+    bonus_col_pitch: float   # 上排加分孔橫向間距 (m)
+    bonus_dy: float          # 上排加分孔高於主格最上排的高度差 (m)
 
 
 @dataclass(frozen=True)
@@ -117,6 +119,24 @@ class Config:
     def tol_bonus(self) -> float:
         """加分格容許球心誤差 (m)。"""
         return (self.field.bonus_d - self.ball.diameter) / 2
+
+    def hole_centers(self) -> list[tuple[str, int, float, np.ndarray]]:
+        """全部圓孔的 (群組, 索引, 直徑, 板座標系3D中心)。
+
+        佈局：主九宮格 3×3（上排左→下排右）+ 上排 3 個加分孔（左→右）。
+        板座標系原點在主九宮格中心，+x 右、+y 上、+z 出板面。
+        scene 與 pose 共用這份佈局，確保幾何一致。
+        """
+        f = self.field
+        holes: list[tuple[str, int, float, np.ndarray]] = []
+        for i, (c, r) in enumerate((c, r) for r in (1, 0, -1) for c in (-1, 0, 1)):
+            holes.append(("main", i, f.frame_d,
+                          np.array([c * f.col_pitch, r * f.row_pitch, 0.0])))
+        top_y = f.row_pitch + f.bonus_dy
+        for i, c in enumerate((-1, 0, 1)):
+            holes.append(("bonus", i, f.bonus_d,
+                          np.array([c * f.bonus_col_pitch, top_y, 0.0])))
+        return holes
 
 
 def load_config(path: str | Path | None = None) -> Config:
