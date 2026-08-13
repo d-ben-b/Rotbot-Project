@@ -18,10 +18,14 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+# 專案根目錄：讓輸出固定落在本 repo，不受 ultralytics 全域 runs_dir 影響
+REPO_ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_PROJECT = str(REPO_ROOT / "runs" / "pose")
+
 
 def train(data_yaml: str, model: str = "yolo11n-pose.pt", epochs: int = 100,
           imgsz: int = 960, batch: int | float = -1, device: str = "0",
-          project: str = "runs/pose", name: str = "grid_yolo11n"):
+          project: str = DEFAULT_PROJECT, name: str = "grid_yolo11n"):
     """跑訓練，回傳 ultralytics 的 results。batch=-1 讓 ultralytics 自動抓 VRAM。"""
     from ultralytics import YOLO  # 延後 import：無 GPU/未安裝環境不受影響
     m = YOLO(model)
