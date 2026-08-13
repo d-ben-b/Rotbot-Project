@@ -71,10 +71,11 @@ class SceneGenerator:
     """隨機視角 + 域隨機化的圓孔九宮格合成器。"""
 
     def __init__(self, cfg: Config, rng: np.random.Generator | None = None,
-                 randomize: bool = True):
+                 randomize: bool = True, rim_jitter: bool = True):
         self.cfg = cfg
         self.rng = rng if rng is not None else np.random.default_rng(cfg.sim.seed)
         self.randomize = randomize
+        self.rim_jitter = rim_jitter        # False = 中性灰邊緣（demo 用，避免顏色混淆）
         self.K = cfg.camera.matrix()
         self.W, self.H = cfg.camera.width, cfg.camera.height
         self._holes_board = cfg.hole_centers()   # [(group, idx, diameter, center_board)]
@@ -164,7 +165,10 @@ class SceneGenerator:
         cv2.fillConvexPoly(img, pts, (18, 18, 20))
         # 孔緣
         thick = int(r.integers(3, 8)) if self.randomize else 5
-        rim = (200, 200, 205) if not self.randomize else tuple(int(x) for x in r.integers(120, 255, size=3))
+        if self.randomize and self.rim_jitter:
+            rim = tuple(int(x) for x in r.integers(120, 255, size=3))
+        else:
+            rim = (200, 200, 205)
         cv2.polylines(img, [pts], True, rim, thick, cv2.LINE_AA)
         if hole.is_lit:                                 # 亮起的指定得分格
             cv2.polylines(img, [pts], True, (80, 255, 120), thick + 3, cv2.LINE_AA)
@@ -191,8 +195,9 @@ class SceneGenerator:
         return out
 
     # ── 對外 ──────────────────────────────────────────
-    def sample(self) -> SceneSample:
-        vp = self._random_viewpoint()
+    def sample(self, vp: dict | None = None) -> SceneSample:
+        """產生一張樣本；vp 省略時隨機視角，給定時用指定視角（demo/掃描用）。"""
+        vp = self._random_viewpoint() if vp is None else dict(vp)
         R, t = self._board_pose(vp)
         holes = [self._make_hole(g, i, d, C, R, t) for (g, i, d, C) in self._holes_board]
 
