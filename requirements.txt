@@ -1,0 +1,7 @@
+numpy>=1.24
+opencv-python>=4.8
+pyyaml>=6.0
+matplotlib>=3.7
+pytest>=7.0
+# 硬體到位後 (P5) 再裝：
+# pyserial>=3.5
