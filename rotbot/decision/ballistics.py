@@ -38,6 +38,22 @@ def aim_for_target(target_zy: tuple[float, float], cfg: Config) -> tuple[float, 
     return pitch, yaw
 
 
+def aim_at_point(target_launcher: tuple[float, float, float] | np.ndarray,
+                 cfg: Config) -> tuple[float, float] | None:
+    """對發射點系任意 3D 目標 (x前, y上, z右) 解瞄準 (俯仰 rad, 水平 rad)。
+
+    圓孔版主用介面：目標 3D 由 frames.hole_target_point 得來（距離逐孔不同）。
+    水平距離取 hypot(x, z)、高度差取 y；射程不足回傳 None。
+    """
+    x, y, z = np.asarray(target_launcher, float)
+    horiz = float(np.hypot(x, z))
+    pitch = ideal_elevation(cfg.launch.v0_model, horiz, y, cfg.air.g)
+    if pitch is None:
+        return None
+    yaw = float(np.arctan2(z, x))
+    return pitch, yaw
+
+
 def estimate_sensitivity(shoot, target_zy: tuple[float, float], cfg: Config,
                          step_deg: float = 0.5) -> tuple[float, float]:
     """數值估計靈敏度 ∂高度/∂俯仰、∂橫向/∂水平 (m/rad)。

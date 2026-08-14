@@ -88,6 +88,17 @@ class CameraConfig:
 
 
 @dataclass(frozen=True)
+class CameraMount:
+    """相機相對發射點的外參（camera→launcher）。全 0 = 相機在發射口且對齊。"""
+    dx: float       # 右 (m)
+    dy: float       # 上 (m)
+    dz: float       # 前 (m)
+    roll: float     # deg
+    pitch: float    # deg
+    yaw: float      # deg
+
+
+@dataclass(frozen=True)
 class SimConfig:
     dt: float
     seed: int
@@ -102,6 +113,7 @@ class Config:
     mechanism: MechanismConfig
     calibration: CalibrationConfig
     camera: CameraConfig
+    camera_mount: CameraMount
     sim: SimConfig
     n_balls: int
 
@@ -152,6 +164,7 @@ def load_config(path: str | Path | None = None) -> Config:
         mechanism=MechanismConfig(**raw["mechanism"]),
         calibration=CalibrationConfig(**raw["calibration"]),
         camera=CameraConfig(**raw["camera"]),
+        camera_mount=CameraMount(**raw["camera_mount"]),
         sim=SimConfig(**raw["sim"]),
         n_balls=int(raw["match"]["n_balls"]),
     )
