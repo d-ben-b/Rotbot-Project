@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import argparse
+import math
 
 import cv2
 import numpy as np
@@ -44,8 +45,9 @@ class MatchVideo:
         self.fps = fps
         self.hold = hold
         self.landings: list[tuple[int, int, bool]] = []
-        self.lit_key = None          # 本場亮孔 (group, idx)，一旦得知就整場畫綠
+        self.lit_key = None          # 目前亮孔 (group, idx)（每球更新，容許會換）
         self.writer = None
+        self.frame_i = 0             # 全域影格計數（給亮孔脈動用）
         # 板面座標範圍（世界：z 橫向、y 高度）
         self.zmin, self.zmax = -1.3, 1.3
         self.ymin, self.ymax = 0.5, 2.9
@@ -59,7 +61,7 @@ class MatchVideo:
         py = int(self.BH / 2 - (y - self.yc) * self.scale)
         return px, py
 
-    def _draw_board(self, p):
+    def _draw_board(self, p, pulse=0.0):
         img = np.full((self.BH, self.BW, 3), C_BG, np.uint8)
         # 圓孔
         for (g, i, diam, C) in self.cfg.hole_centers():
@@ -70,7 +72,8 @@ class MatchVideo:
             is_lit = (g, i) == self.lit_key
             col = C_LIT if is_lit else (C_BONUS if g == "bonus" else C_MAIN)
             cv2.circle(img, (px, py), r, col, 2, cv2.LINE_AA)
-            if is_lit:
+            if is_lit:                                  # 脈動高亮
+                cv2.circle(img, (px, py), r + int(6 + 10 * pulse), C_LIT, 2, cv2.LINE_AA)
                 cv2.putText(img, "x2", (px - 14, py + 6), cv2.FONT_HERSHEY_SIMPLEX,
                             0.6, C_LIT, 2, cv2.LINE_AA)
         # 過往落點（淡）
@@ -102,14 +105,28 @@ class MatchVideo:
         cv2.putText(img, "Board (landing points)", (16, self.BH - 18),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.55, (150, 150, 150), 1, cv2.LINE_AA)
 
-    def _draw_camera(self, p):
+    def _draw_camera(self, p, pulse=0.0):
         img = p["image"].copy()
-        for d in (p.get("detections") or []):
+        res = p["result"]
+        dets = p.get("detections") or []
+        for d in dets:
             x1, y1, x2, y2 = [int(v) for v in d.bbox]
             cx, cy = int(d.center[0]), int(d.center[1])
+            ax, ay = max(4, (x2 - x1) // 2), max(4, (y2 - y1) // 2)
             col = C_LIT if d.is_lit else (C_BONUS if d.is_bonus else C_MAIN)
-            cv2.ellipse(img, (cx, cy), ((x2 - x1) // 2, (y2 - y1) // 2), 0, 0, 360,
-                        col, 3, cv2.LINE_AA)
+            cv2.ellipse(img, (cx, cy), (ax, ay), 0, 0, 360, col, 3, cv2.LINE_AA)
+            if d.is_lit:                                # 亮孔脈動高亮
+                cv2.ellipse(img, (cx, cy), (ax + int(8 + 16 * pulse), ay + int(8 + 16 * pulse)),
+                            0, 0, 360, C_LIT, 3, cv2.LINE_AA)
+        # 本球目標：十字準星（在目標孔）+ 標籤（固定在底部，避免被邊緣切掉）
+        tgt = next((d for d in dets if d.group == res.group and d.idx == res.idx), None)
+        tag = "TARGET x2" if res.is_lit else f"{res.group}#{res.idx}"
+        if tgt is not None:
+            tx, ty = int(tgt.center[0]), int(tgt.center[1])
+            cv2.drawMarker(img, (tx, ty), C_TARGET, cv2.MARKER_CROSS, 80, 3)
+            cv2.circle(img, (tx, ty), 46, C_TARGET, 2, cv2.LINE_AA)
+        cv2.putText(img, f"AIMING: {tag}", (20, img.shape[0] - 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1.3, C_TARGET, 3, cv2.LINE_AA)
         h = self.BH
         w = int(img.shape[1] * h / img.shape[0])
         img = cv2.resize(img, (w, h))
@@ -120,19 +137,28 @@ class MatchVideo:
 
     def on_shot(self, p):
         res = p["result"]
-        if res.is_lit:                       # 記住本場亮孔，整場畫綠
+        # 更新「目前亮孔」：render 有偵測就用偵測（容許會換），否則用 target 是否 lit
+        dets = p.get("detections")
+        lit_det = next((d for d in (dets or []) if d.is_lit), None)
+        if lit_det is not None:
+            self.lit_key = (lit_det.group, lit_det.idx)
+        elif res.is_lit:
             self.lit_key = (res.group, res.idx)
         if p["land_zy"] is not None:
             lz, ly = p["land_zy"]
-            self.landings.append((*self._to_px(lz, ly), p["result"].hit))
-        board = self._draw_board(p)
-        frame = board if self.mode == "truth" else cv2.hconcat([self._draw_camera(p), board])
-        if self.writer is None:
-            h, w = frame.shape[:2]
-            self.writer = cv2.VideoWriter(self.out_path,
-                                          cv2.VideoWriter_fourcc(*"mp4v"), self.fps, (w, h))
-        for _ in range(self.hold):
+            self.landings.append((*self._to_px(lz, ly), res.hit))
+
+        for _ in range(self.hold):                       # 每球多影格，做亮孔脈動
+            pulse = 0.5 + 0.5 * math.sin(2 * math.pi * self.frame_i / 10)
+            board = self._draw_board(p, pulse)
+            frame = board if self.mode == "truth" else \
+                cv2.hconcat([self._draw_camera(p, pulse), board])
+            if self.writer is None:
+                h, w = frame.shape[:2]
+                self.writer = cv2.VideoWriter(self.out_path,
+                                              cv2.VideoWriter_fourcc(*"mp4v"), self.fps, (w, h))
             self.writer.write(frame)
+            self.frame_i += 1
 
     def close(self):
         if self.writer:
