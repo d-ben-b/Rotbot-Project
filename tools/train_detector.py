@@ -60,7 +60,19 @@ def main() -> None:
     results = train(args.data, model=args.model, epochs=args.epochs,
                     imgsz=args.imgsz, batch=batch, device=args.device,
                     workers=args.workers)
-    print("訓練完成。輸出：", getattr(results, "save_dir", "runs/detect/…"))
+    save_dir = getattr(results, "save_dir", None)
+    print("訓練完成。輸出：", save_dir or "runs/detect/…")
+
+    # 自動複製最佳權重到 models/（統一存放，方便管理多個模型）
+    if save_dir:
+        best = Path(save_dir) / "weights" / "best.pt"
+        if best.exists():
+            import shutil
+            models_dir = REPO_ROOT / "models"
+            models_dir.mkdir(exist_ok=True)
+            dest = models_dir / "grid_holes_yolo11n.pt"
+            shutil.copy2(best, dest)
+            print("已複製最佳權重 →", dest)
 
 
 if __name__ == "__main__":

@@ -108,7 +108,7 @@ def run(weights: str, frames: int, out_dir: str, device: str = "0",
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--weights", required=True)
+    ap.add_argument("--weights", default="models/grid_holes_yolo11n.pt")
     ap.add_argument("--frames", type=int, default=72)
     ap.add_argument("--out", default="runs/demo")
     ap.add_argument("--device", default="0")

@@ -79,7 +79,7 @@ def run(weights: str, scenes: int, seed: int = 123, conf: float = 0.25,
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--weights", required=True)
+    ap.add_argument("--weights", default="models/grid_holes_yolo11n.pt")
     ap.add_argument("--scenes", type=int, default=50)
     ap.add_argument("--conf", type=float, default=0.25)
     ap.add_argument("--imgsz", type=int, default=960)
