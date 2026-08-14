@@ -120,13 +120,16 @@ rotbot/
 
 **DoD：** 主邏輯能透過協定對 MockArduino 下完整一發指令並確認回應；狀態機涵蓋賽制與安全。
 
-### P4 — 系統整合：模擬閉迴路（約 2 週）
-- [ ] `pipeline/loop.py`：串起 scene → detector → pose → strategy → ballistics → protocol → world → 落點 → calibration
-- [ ] 端到端跑完一整場 27 顆的模擬，輸出命中率/加分格命中/收斂曲線
-- [ ] 效能量測：模擬各階段耗時，預估 Orin 上的延遲預算
-- [ ] 整合測試納入 CI
+### P4 — 系統整合：模擬閉迴路（核心完成）
+- [x] `sim/closed_loop.py`：串起 感知(真值+雜訊) → 決策(plan_next_shot) → 致動(AimCommand→MockArduino)
+      → 物理(BallisticWorld) → 計分 → 線上校正(AdaptiveCalibrator)
+- [x] 端到端跑完一整場 27 顆，輸出總分/命中率/加分孔命中；每發驗證走過通訊路徑
+- [x] `tools/run_match.py`：蒙地卡羅比較（校正 vs 未校正）/ 單場逐球明細
+- [x] 整合測試納入 CI（校正提升成績、通訊路徑）
+- [ ] 效能量測：各階段耗時，預估 Orin 延遲預算（併 P5 用真模型量）
+- [ ] 感知改接「真 YOLO + render 影像」的重版閉迴路（目前用真值+雜訊聚焦下游；真模型已於 P1 端到端驗證）
 
-**DoD：** 一鍵跑完整場模擬並產出成績報告 — 這就是硬體到位前的「軟體完成」。
+**DoD：** ✅ 一鍵跑完整場模擬並產出成績報告。結果（30 場）：校正後 總分51/命中92%/加分32% vs 未校正 45/83%/4%。
 
 ### P5 — 硬體到位後整合（硬體 milestone 觸發）
 - [ ] 相機標定：實拍棋盤格求真實內參與畸變，替換 `calib/`
