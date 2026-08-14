@@ -154,6 +154,9 @@
 
 ### 2026-08-14
 
+- **投球 demo 影片工具**（`3385da0`，`tools/demo_match_video.py`）：閉迴路一場的視覺化影片，供進度報告成果。
+  `--mode truth`＝板面落點視圖；`--mode render`＝相機+YOLO ｜ 板面 分割視圖。板面顯示圓孔/亮孔x2/目標/
+  落點(綠命中紅未中)/比分/命中率，逐球累積可見「找手感」落點收斂。輸出於 `runs/demo/`（大檔不入 git）。
 - **P4 強化：真 render 影像 + 真 YOLO 版閉迴路**（`f421e82`）：`run_closed_loop_render`（`--render`）每球渲染
   相機影像→真 YoloDetector→localize→決策→物理→計分→校正。幾何一致性正解——外參 (R_cl,t_cl)
   由場景真實板位姿反算，使網板成為 x=dist_x 垂直平面，感知與計分真值完全一致（無尤拉角近似偏差）；
