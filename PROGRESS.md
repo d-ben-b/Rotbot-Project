@@ -154,6 +154,11 @@
 
 ### 2026-08-14
 
+- **P4 強化：真 render 影像 + 真 YOLO 版閉迴路**（`f421e82`）：`run_closed_loop_render`（`--render`）每球渲染
+  相機影像→真 YoloDetector→localize→決策→物理→計分→校正。幾何一致性正解——外參 (R_cl,t_cl)
+  由場景真實板位姿反算，使網板成為 x=dist_x 垂直平面，感知與計分真值完全一致（無尤拉角近似偏差）；
+  渲染視角只決定影像長相、與世界解耦。結果：真 YOLO 單場 **總分52/命中93%/加分33%**（與 truth+noise 版相當）。
+  （一場約 30s：每球 render 大圖 + YOLO；不進 CI，快速回歸仍用 truth+noise 版。）
 - **P4 模擬閉迴路核心完成**（`sim/closed_loop.py` + `tools/run_match.py`）：串起 感知(真值+雜訊)→決策→
   致動(AimCommand→MockArduino)→物理(BallisticWorld)→計分→線上校正，跑完整場 27 球；每發驗證走過通訊路徑。
   蒙地卡羅（30 場）：**校正後 總分51/命中92%/加分32% vs 未校正 45/83%/4%**——校正對 Ø20 加分孔提升最顯著
