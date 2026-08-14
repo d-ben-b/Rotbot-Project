@@ -81,14 +81,19 @@ class ShotPlanner:
         self.counts[self._key(aim)] = self.counts.get(self._key(aim), 0) + 1
 
 
-def plan_next_shot(aims, planner: ShotPlanner, cfg: Config) -> ShotPlan | None:
+def plan_next_shot(aims, planner: ShotPlanner, cfg: Config,
+                   extrinsic: tuple | None = None) -> ShotPlan | None:
     """感知每孔瞄準 → 過濾射程可達 → 策略選目標 → 回傳瞄準指令。
 
     aims: perception.localize 的 HoleAim 清單（具 distance/bearing/elev/group/idx/is_bonus/is_lit）。
+    extrinsic: 選填 (R_cl, t_cl) 完整外參；給定時取代 cfg.camera_mount 尤拉角。
     """
     reachable = []
     for a in aims:
-        pt = frames.hole_target_point(a.distance, a.bearing, a.elev, cfg)
+        if extrinsic is not None:
+            pt = frames.hole_target_point_ext(a.distance, a.bearing, a.elev, *extrinsic)
+        else:
+            pt = frames.hole_target_point(a.distance, a.bearing, a.elev, cfg)
         ang = ballistics.aim_at_point(pt, cfg)
         if ang is not None:
             reachable.append((a, ang, pt))

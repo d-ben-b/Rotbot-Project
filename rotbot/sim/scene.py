@@ -195,17 +195,25 @@ class SceneGenerator:
         return out
 
     # ── 對外 ──────────────────────────────────────────
-    def sample(self, vp: dict | None = None) -> SceneSample:
-        """產生一張樣本；vp 省略時隨機視角，給定時用指定視角（demo/掃描用）。"""
+    def sample(self, vp: dict | None = None,
+               lit_bonus: int | str | None = "random") -> SceneSample:
+        """產生一張樣本。
+
+        vp: 省略=隨機視角，給定=指定視角（demo/閉迴路用）。
+        lit_bonus: "random"=隨機亮一個(預設)、None=都不亮、int=固定亮該加分孔（整場比賽用）。
+        """
         vp = self._random_viewpoint() if vp is None else dict(vp)
         R, t = self._board_pose(vp)
         holes = [self._make_hole(g, i, d, C, R, t) for (g, i, d, C) in self._holes_board]
 
-        # 隨機點亮一個加分孔（多數情況）
         bonus = [h for h in holes if h.is_bonus]
         lit_idx = None
-        if bonus and self.rng.random() < 0.9:
-            lit_idx = int(self.rng.integers(0, len(bonus)))
+        if lit_bonus == "random":
+            if bonus and self.rng.random() < 0.9:
+                lit_idx = int(self.rng.integers(0, len(bonus)))
+        elif lit_bonus is not None:
+            lit_idx = int(lit_bonus)
+        if lit_idx is not None and 0 <= lit_idx < len(bonus):
             bonus[lit_idx].is_lit = True
         vp["lit_bonus_idx"] = lit_idx
 

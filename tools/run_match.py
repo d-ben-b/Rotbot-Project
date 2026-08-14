@@ -2,8 +2,9 @@
 """跑模擬閉迴路一場比賽並印成績（P4）。
 
 用法：
-    python -m tools.run_match --trials 50          # 校正 vs 未校正 蒙地卡羅比較
-    python -m tools.run_match --one --seed 0       # 只跑一場、印每球明細
+    python -m tools.run_match --trials 50           # 校正 vs 未校正 蒙地卡羅（真值+雜訊感知，快）
+    python -m tools.run_match --one --seed 0        # 單場逐球明細（真值+雜訊感知）
+    python -m tools.run_match --render --seed 0     # 單場逐球明細（真 render 影像 + 真 YOLO，慢）
 """
 from __future__ import annotations
 
@@ -12,13 +13,13 @@ import argparse
 import numpy as np
 
 from rotbot.config import load_config
-from rotbot.sim.closed_loop import monte_carlo, run_closed_loop
+from rotbot.sim.closed_loop import (monte_carlo, run_closed_loop,
+                                    run_closed_loop_render)
 
 
-def _print_one(cfg, seed):
-    r = run_closed_loop(cfg, np.random.default_rng(seed), correct=True)
+def _print_report(r, title):
     print("=" * 60)
-    print(f"  單場閉迴路（seed={seed}，含校正）")
+    print(f"  {title}")
     print("=" * 60)
     for s in r.shots:
         tag = "★亮孔x2" if s.is_lit else f"{s.group}#{s.idx}"
@@ -48,12 +49,21 @@ def _print_mc(cfg, trials):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--trials", type=int, default=50)
-    ap.add_argument("--one", action="store_true", help="只跑一場並印每球明細")
+    ap.add_argument("--one", action="store_true", help="單場逐球明細（真值+雜訊感知）")
+    ap.add_argument("--render", action="store_true", help="單場逐球明細（真 render 影像 + 真 YOLO）")
+    ap.add_argument("--weights", default="models/grid_holes_yolo11n.pt")
     ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args()
     cfg = load_config()
-    if args.one:
-        _print_one(cfg, args.seed)
+
+    if args.render:
+        from rotbot.perception.detector import YoloDetector
+        det = YoloDetector(args.weights)
+        r = run_closed_loop_render(cfg, det, np.random.default_rng(args.seed), correct=True)
+        _print_report(r, f"單場閉迴路（seed={args.seed}，真 render + YOLO，含校正）")
+    elif args.one:
+        r = run_closed_loop(cfg, np.random.default_rng(args.seed), correct=True)
+        _print_report(r, f"單場閉迴路（seed={args.seed}，真值+雜訊感知，含校正）")
     else:
         _print_mc(cfg, args.trials)
 

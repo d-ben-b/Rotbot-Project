@@ -56,3 +56,14 @@ def hole_target_point(distance: float, bearing_deg: float, elev_deg: float,
     """感知量測 (距離/方位/俯仰) → 發射點系 3D 目標 (x前, y上, z右)。"""
     return camera_point_to_launcher(
         aim_to_camera_point(distance, bearing_deg, elev_deg), cfg)
+
+
+def hole_target_point_ext(distance: float, bearing_deg: float, elev_deg: float,
+                          R_cl: np.ndarray, t_cl: np.ndarray) -> np.ndarray:
+    """同上，但用完整外參矩陣 (R_cl, t_cl) 取代 CameraMount 尤拉角。
+
+    用於模擬閉迴路：外參由場景真實板位姿精確反算（避免尤拉角近似的殘餘偏差）。
+    P5 實機標定同樣可得完整 R,t。
+    """
+    p_cam = aim_to_camera_point(distance, bearing_deg, elev_deg)
+    return np.asarray(R_cl, float) @ p_cam + np.asarray(t_cl, float)
