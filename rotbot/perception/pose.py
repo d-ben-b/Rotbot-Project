@@ -51,7 +51,8 @@ def solve_board_pose(obj_pts: np.ndarray, img_pts: np.ndarray, K: np.ndarray,
     if len(obj_pts) < 4:
         return None
     dist = np.zeros((5, 1)) if dist_coeffs is None else np.asarray(dist_coeffs, np.float64)
-    ok, rvec, tvec = cv2.solvePnP(obj_pts, img_pts, K, dist, flags=cv2.SOLVEPNP_IPPE)
+    # SQPNP：對共面且「正對(fronto-parallel)」都穩定、單一解，避開 IPPE 的正對退化
+    ok, rvec, tvec = cv2.solvePnP(obj_pts, img_pts, K, dist, flags=cv2.SOLVEPNP_SQPNP)
     if not ok:
         ok, rvec, tvec = cv2.solvePnP(obj_pts, img_pts, K, dist,
                                       flags=cv2.SOLVEPNP_ITERATIVE)

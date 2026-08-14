@@ -85,10 +85,10 @@ def _solve_group(dets_idx, known, group, K, dist):
             img0.append(d.center)
     if len(obj0) < 4:
         return None
-    # 共面點用 IPPE（solvePnPRansac 在共面點上不穩，故不用）
+    # SQPNP：共面且正對都穩定（solvePnPRansac 共面不穩、IPPE 正對退化，故都不用）
     ok, rvec, tvec = cv2.solvePnP(np.array(obj0, np.float64),
                                   np.array(img0, np.float64), K, dist,
-                                  flags=cv2.SOLVEPNP_IPPE)
+                                  flags=cv2.SOLVEPNP_SQPNP)
     if not ok:
         ok, rvec, tvec = cv2.solvePnP(np.array(obj0, np.float64),
                                       np.array(img0, np.float64), K, dist,
