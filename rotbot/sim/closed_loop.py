@@ -34,6 +34,12 @@ def _hole_int_index(group: str, idx: int) -> int:
     return idx if group == "main" else 9 + idx
 
 
+def _shot_payload(sr, report, target_zy, land_zy, image, estimate, detections=None):
+    """每球回呼給視覺化工具用的資料。"""
+    return dict(result=sr, total_points=report.total_points, target_zy=target_zy,
+                land_zy=land_zy, image=image, estimate=estimate, detections=detections)
+
+
 @dataclass
 class ShotResult:
     ball: int
@@ -78,8 +84,12 @@ def _truth_holes(cfg: Config):
 
 
 def run_closed_loop(cfg: Config, rng: np.random.Generator, correct: bool = True,
-                    noise_d: float = 0.03, noise_ang: float = 0.5) -> MatchReport:
-    """跑一整場閉迴路；correct=False 為關閉線上校正的對照組。"""
+                    noise_d: float = 0.03, noise_ang: float = 0.5,
+                    on_shot=None) -> MatchReport:
+    """跑一整場閉迴路；correct=False 為關閉線上校正的對照組。
+
+    on_shot: 選填，每球呼叫一次 on_shot(payload)（供視覺化；見 _shot_payload）。
+    """
     holes = _truth_holes(cfg)
     truth = {(g, i): (diam, z, y) for (g, i, diam, z, y) in holes}
     lit_idx = int(rng.integers(0, 3))                  # 隨機亮起一個加分孔
@@ -127,29 +137,34 @@ def run_closed_loop(cfg: Config, rng: np.random.Generator, correct: bool = True,
         tol = (diam - cfg.ball.diameter) / 2
 
         if land is None:
-            report.shots.append(ShotResult(report.shots.__len__() + 1, t.group, t.idx,
-                                           t.is_lit, float("nan"), False, 0))
+            sr = ShotResult(len(report.shots) + 1, t.group, t.idx, t.is_lit,
+                            float("nan"), False, 0)
+            report.shots.append(sr)
+            if on_shot:
+                on_shot(_shot_payload(sr, report, (tz, ty), None, None, None))
             continue
         lz, ly = land
         e_z, e_y = tz - lz, ty - ly
         err = float(np.hypot(e_z, e_y))
         hit = err <= tol
         pts = (4 if t.is_lit else 2) if hit else 0
-        report.shots.append(ShotResult(len(report.shots) + 1, t.group, t.idx,
-                                       t.is_lit, err, hit, pts))
+        sr = ShotResult(len(report.shots) + 1, t.group, t.idx, t.is_lit, err, hit, pts)
+        report.shots.append(sr)
 
         # 5. 線上校正（用帶雜訊的量測落點）
         if correct:
             m_z = e_z + rng.normal(0, cfg.calibration.meas_noise_m)
             m_y = e_y + rng.normal(0, cfg.calibration.meas_noise_m)
             calib.update(hidx, (m_z, m_y))
+        if on_shot:
+            on_shot(_shot_payload(sr, report, (tz, ty), (lz, ly), None, None))
 
     assert len(arduino.history) == len(report.shots)   # 每發都確實走過通訊路徑
     return report
 
 
 def run_closed_loop_render(cfg: Config, detector, rng: np.random.Generator,
-                           correct: bool = True) -> MatchReport:
+                           correct: bool = True, on_shot=None) -> MatchReport:
     """render 影像 + 真 YOLO 版閉迴路（P4 強化）。
 
     每球：渲染相機影像 → detector.detect → localize_holes → 決策 → 物理 → 計分 → 校正。
@@ -216,20 +231,25 @@ def run_closed_loop_render(cfg: Config, detector, rng: np.random.Generator,
         diam, tz, ty = truth[(t.group, t.idx)]
         tol = (diam - cfg.ball.diameter) / 2
         if land is None:
-            report.shots.append(ShotResult(len(report.shots) + 1, t.group, t.idx,
-                                           t.is_lit, float("nan"), False, 0))
+            sr = ShotResult(len(report.shots) + 1, t.group, t.idx, t.is_lit,
+                            float("nan"), False, 0)
+            report.shots.append(sr)
+            if on_shot:
+                on_shot(_shot_payload(sr, report, (tz, ty), None, s.image, est, dets))
             continue
         lz, ly = land
         e_z, e_y = tz - lz, ty - ly
         err = float(np.hypot(e_z, e_y))
         hit = err <= tol
         pts = (4 if t.is_lit else 2) if hit else 0       # 5. 計分
-        report.shots.append(ShotResult(len(report.shots) + 1, t.group, t.idx,
-                                       t.is_lit, err, hit, pts))
+        sr = ShotResult(len(report.shots) + 1, t.group, t.idx, t.is_lit, err, hit, pts)
+        report.shots.append(sr)
         if correct:                                      #    線上校正
             m_z = e_z + rng.normal(0, cfg.calibration.meas_noise_m)
             m_y = e_y + rng.normal(0, cfg.calibration.meas_noise_m)
             calib.update(hidx, (m_z, m_y))
+        if on_shot:
+            on_shot(_shot_payload(sr, report, (tz, ty), (lz, ly), s.image, est, dets))
 
     return report
 
