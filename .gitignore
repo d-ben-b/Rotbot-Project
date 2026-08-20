@@ -3,6 +3,9 @@ datasets/
 runs/
 *.pt
 
+# 程序化生成的網板碰撞網格快取（依需求重建）
+rotbot/sim/assets/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

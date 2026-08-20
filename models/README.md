@@ -15,10 +15,15 @@
 
 ## 目前模型
 
-- **`grid_holes_yolo11n.pt`**
+- **`grid_holes_yolo11n.pt`** — ✅ **基準模型（已定版 2026-08-18）**
   - 任務：圓孔偵測（類別 0=main / 1=bonus / 2=bonus_lit）
+  - 輸入：BGR 影像；建議 imgsz 960、conf 0.25
   - 訓練：`tools/train_detector.py`，2000 張合成資料 / 100 epochs / imgsz 960
   - 驗證集 mAP50：main 0.995、bonus 0.973、bonus_lit 0.954
+  - **端到端感知評估**（`tools/eval_perception.py`，50 場合成，2026-08-18）：
+    整板 PnP 46/50、亮孔正確帶出 7/7、距離誤差平均 4.9cm（p95 16.4）、方位 1.20°、俯仰 0.44°
+  - 已知限制：略微過偵測（偵測 489 vs 可見 439，可調高 conf）；遠孔距離 p95 偏大；
+    合成資料訓練，真實賽場/PyBullet 渲染有**域差**（日後以 Blender 合成或實拍微調收斂）
   - 來源：`runs/detect/grid_holes-2/weights/best.pt` 複製而來
 
 ## 如何產生 / 使用
