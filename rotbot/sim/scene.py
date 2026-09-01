@@ -170,8 +170,17 @@ class SceneGenerator:
         else:
             rim = (200, 200, 205)
         cv2.polylines(img, [pts], True, rim, thick, cv2.LINE_AA)
-        if hole.is_lit:                                 # 亮起的指定得分格
-            cv2.polylines(img, [pts], True, (80, 255, 120), thick + 3, cv2.LINE_AA)
+        if hole.is_lit:                                 # 指定得分格：紅色 LED 燈環（官方 Q33 確認為紅）
+            # 官方：網框邊緣紅色 LED 燈條、寬約14mm、~475±25lm → 呈紅色亮環 + 光暈
+            if self.randomize:
+                red = (int(r.integers(0, 55)), int(r.integers(0, 70)), int(r.integers(200, 256)))
+                glow = int(r.integers(6, 16))
+            else:
+                red = (40, 40, 235)
+                glow = 8
+            cv2.polylines(img, [pts], True, tuple(int(c * 0.45) for c in red),
+                          thick + glow, cv2.LINE_AA)      # 外圈暗紅光暈（模擬 LED bloom）
+            cv2.polylines(img, [pts], True, red, thick + 3, cv2.LINE_AA)  # 主燈環（亮紅）
 
     def _post_process(self, img):
         if not self.randomize:

@@ -61,7 +61,7 @@ def _annotate(sample: SceneSample) -> np.ndarray:
     for hole in sample.holes:
         if hole.center_cam[2] <= 0:
             continue
-        col = (80, 255, 120) if hole.is_lit else ((0, 200, 255) if hole.is_bonus else (0, 180, 255))
+        col = (40, 40, 235) if hole.is_lit else ((0, 200, 255) if hole.is_bonus else (0, 180, 255))
         cv2.polylines(img, [hole.rim_px.astype(np.int32)], True, col, 1)
         c = hole.center_px.astype(int)
         cv2.circle(img, tuple(c), 4, col, -1)

@@ -46,29 +46,45 @@ class ShotPlan:
 class ShotPlanner:
     """27 顆的投球排程：亮起加分孔最高優先，各孔有球數上限。
 
-    規則對應：加分孔（亮起）每球 4 分、最多 3 球（12 分）、整場有效；
-             一般孔每球 2 分、每孔最多 3 球（6 分）。未亮的加分孔不投（不計分）。
+    規則對應：加分孔（亮起）每球 4 分、最多 3 球（12 分）；一般孔每球 2 分、每孔最多 3 球（6 分）。
+    加分孔亮燈機制（官方 Q34 確認）：哨響隨機亮 1 格、固定 60 秒、之後熄滅 → **加分孔只有前 60 秒能得分**；
+    窗口過後不亮視同不可投（本策略窗口後即不再選加分孔）。
     """
 
     def __init__(self, cfg: Config, total_balls: int | None = None,
-                 bonus_cap: int = 3, main_cap: int = 3):
+                 bonus_cap: int = 3, main_cap: int = 3,
+                 bonus_window_s: float = 60.0, match_s: float = 180.0,
+                 sec_per_ball: float | None = None):
         self.cfg = cfg
-        self.remaining = cfg.n_balls if total_balls is None else total_balls
+        self.total = cfg.n_balls if total_balls is None else total_balls
+        self.remaining = self.total
         self.bonus_cap = bonus_cap
         self.main_cap = main_cap
+        self.bonus_window_s = bonus_window_s
+        # 沒有牆鐘時，用「每球平均耗時」估流逝時間（賽制 180s / 全部球數）
+        self.sec_per_ball = (match_s / self.total) if sec_per_ball is None else sec_per_ball
+        self.shots_taken = 0
         self.counts: dict[tuple[str, int], int] = {}   # (group,idx) -> 已投球數
 
     def _key(self, aim) -> tuple[str, int]:
         return (aim.group, aim.idx)
 
-    def select(self, aims) -> "HoleAim | None":
-        """從候選孔挑下一個目標；沒球或無可投目標回傳 None。"""
+    def elapsed_s(self, elapsed_s: float | None = None) -> float:
+        """流逝秒數：給定牆鐘就用它，否則用已投球數 × 每球平均耗時估算。"""
+        return self.shots_taken * self.sec_per_ball if elapsed_s is None else elapsed_s
+
+    def select(self, aims, elapsed_s: float | None = None) -> "HoleAim | None":
+        """從候選孔挑下一個目標；沒球或無可投目標回傳 None。
+
+        elapsed_s: 選填牆鐘秒數；未給則由已投球數估算。用於判斷加分孔 60 秒窗口是否仍有效。
+        """
         if self.remaining <= 0:
             return None
-        lit = [a for a in aims if a.is_lit
-               and self.counts.get(self._key(a), 0) < self.bonus_cap]
-        if lit:
-            return min(lit, key=lambda a: a.distance)     # 近的較好命中
+        if self.elapsed_s(elapsed_s) < self.bonus_window_s:   # 前 60 秒：加分孔最高優先
+            lit = [a for a in aims if a.is_lit
+                   and self.counts.get(self._key(a), 0) < self.bonus_cap]
+            if lit:
+                return min(lit, key=lambda a: a.distance)     # 近的較好命中
         mains = [a for a in aims if not a.is_bonus
                  and self.counts.get(self._key(a), 0) < self.main_cap]
         if mains:
@@ -78,15 +94,18 @@ class ShotPlanner:
     def record(self, aim) -> None:
         """記錄已投一發（不論命中與否，實彈都消耗）。"""
         self.remaining -= 1
+        self.shots_taken += 1
         self.counts[self._key(aim)] = self.counts.get(self._key(aim), 0) + 1
 
 
 def plan_next_shot(aims, planner: ShotPlanner, cfg: Config,
-                   extrinsic: tuple | None = None) -> ShotPlan | None:
+                   extrinsic: tuple | None = None,
+                   elapsed_s: float | None = None) -> ShotPlan | None:
     """感知每孔瞄準 → 過濾射程可達 → 策略選目標 → 回傳瞄準指令。
 
     aims: perception.localize 的 HoleAim 清單（具 distance/bearing/elev/group/idx/is_bonus/is_lit）。
     extrinsic: 選填 (R_cl, t_cl) 完整外參；給定時取代 cfg.camera_mount 尤拉角。
+    elapsed_s: 選填牆鐘秒數，供加分孔 60 秒窗口判斷；未給則由策略以已投球數估算。
     """
     reachable = []
     for a in aims:
@@ -99,7 +118,7 @@ def plan_next_shot(aims, planner: ShotPlanner, cfg: Config,
             reachable.append((a, ang, pt))
     if not reachable:
         return None
-    chosen = planner.select([r[0] for r in reachable])
+    chosen = planner.select([r[0] for r in reachable], elapsed_s=elapsed_s)
     if chosen is None:
         return None
     for a, (pitch, yaw), pt in reachable:
