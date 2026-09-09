@@ -1,3 +1,10 @@
+---
+title: 2026 TEL Robot Combat 開發進度報告（嘻諧們）
+tags: TEL Robot Combat, 進度報告, 嘻諧們, NCKU
+lang: zh-TW
+description: 隊伍「嘻諧們」AI 自主棒球投手機器人 — 軟體開發階段性進度報告（2026-09）
+---
+
 # 2026 TEL Robot Combat — 開發進度報告
 
 **致：** 2026 東京威力科創機器人大賽（TEL Robot Combat）主辦單位
@@ -5,6 +12,8 @@
 **指導教授：** 張怡玲 教授
 **報告日期：** 2026 年 9 月 9 日
 **報告範圍：** AI 自主控制軟體（影像辨識、瞄準決策、模擬驗證）階段性進度
+
+[TOC]
 
 ---
 
