@@ -23,6 +23,12 @@ import time
 import cv2
 import numpy as np
 
+# 允許直接以檔案路徑執行（python tools/teleop_sim.py）：把專案根目錄補進 sys.path
+if __package__ in (None, ""):
+    import os
+    import sys
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from rotbot.config import CameraConfig, load_config
 from rotbot.decision import ballistics
 from rotbot.decision.calibration import AdaptiveCalibrator

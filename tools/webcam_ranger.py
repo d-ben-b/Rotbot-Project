@@ -22,6 +22,12 @@ import math
 import cv2
 import numpy as np
 
+# 允許直接以檔案路徑執行（python tools/webcam_ranger.py）：把專案根目錄補進 sys.path
+if __package__ in (None, ""):
+    import os
+    import sys
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from rotbot.perception.pose import distance_from_diameter, pose_from_ellipse
 
 WIN = "Webcam ranger"
