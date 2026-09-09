@@ -153,6 +153,30 @@
 > **append-only**：每次更新只**新增**條目、不改舊條目，保留數字與決策的演進供工作日誌追蹤。
 > 上方 §0–§8 為「最新快照」；本區為「歷史紀錄」。新到舊排列。
 
+### 2026-09-09（追趕補記：8/19 之後的變更）
+
+- **webcam 即時測距工具**（`tools/webcam_ranger.py`）：筆電鏡頭手拿已知直徑的圓（比賽 40/20cm），
+  即時算距離/方位/俯仰/傾角；重用 `perception.pose` 的 `distance_from_diameter`（方法A）與
+  `pose_from_ellipse`（方法B）→ 與機器人同一套幾何。合成圓驗證：FOV60@1280，40cm@242px→1.83m（理論1.85）。
+- **PyBullet 網板圓孔平滑化**（`sim/board_mesh.py`）：改「粗背景格 + 孔邊沿真圓弧貼齊」三角化，
+  同等圓滑度三角形由 ~18.9萬 降到 ~1.0萬（載入/記憶體/GUI 大勝）；孔圓滑度由 `arc_seg` 控、與格子脫鉤。
+- **亮孔改紅色 LED 燈環**（`sim/board_mesh.py` `ring_obj_path` + `sim/pybullet_world.py`）：
+  由「半透明紅圓盤（整格發紅）」改為「沿孔緣一圈紅環」，符合官方 Q33（網框邊緣紅色 LED 燈條）。
+- **tools 支援直接路徑執行**（`teleop_sim.py`/`webcam_ranger.py`）：`python tools/xxx.py` 也可用（補 sys.path）。
+- **teleop 錄影**（`--record out.mp4`）：PyBullet 3D 視窗 + 機器人相機視窗各存一份 mp4。
+- **teleop 掃視自動框整板**（`_survey_pose`）：自動掃描瞄準高度使 12 孔全入框（先前對準主格中心會切到底/加分排）。
+- **teleop 偵測疊圖 + 資料視窗**：每孔畫投影橢圓（型變）+ 距離標籤（亮孔紅）；另開「Detections」視窗列
+  距離/方位/俯仰/傾角/型變（短長軸比）。`--no-data` 可關。
+- **物理×校正實驗**（`sim/closed_loop.monte_carlo`，各 60 場）：
+  - 校正 ON vs OFF：總分 43.2→**51.0**、命中率 80%→**91%**、加分孔命中 1%→**27%**。
+  - 逐球收斂：校正約 4~6 球把誤差壓到 ~5cm 並穩住。
+  - 穩健度（命中率 OFF→ON）：2×安裝偏差 19%→91%、1.5×阻力 69%→91%、2×逐發抖動 68%→83%
+    → 校正能吸收**系統性**誤差，但**隨機抖動**只能部分改善（機構重複精度是硬體責任）。
+- **參考文件**（`docs/software_architecture_and_experiments.md`）：field.yaml 參數來源分類、實驗表、
+  架構與資料流、各模組邏輯、函式庫、假設、硬體前提。
+- **工作準則**（`CLAUDE.md`）：新增「每次變更都要 append PROGRESS §9」等規則。
+- 全程 37 tests passed。
+
 ### 2026-08-19
 
 - **官方確認加分孔亮燈機制（賽事 Q&A Q33/Q34）**——解決 §7 兩項長期未定風險：
