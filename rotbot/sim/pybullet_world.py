@@ -23,7 +23,7 @@ from .robot_spec import RobotSpec
 _C_DRUM = (0.80, 0.45, 0.15, 1.0)
 _C_FLYWHEEL = (0.55, 0.35, 0.75, 1.0)
 _C_BALL = (0.95, 0.95, 0.95, 1.0)
-_C_LIT = (0.95, 0.18, 0.18, 0.60)      # 半透明紅：亮起的指定得分格（官方 Q33 確認為紅 LED）
+_C_LIT = (0.95, 0.12, 0.12, 1.0)       # 紅：亮起指定得分格的 LED 燈環（官方 Q33 確認為紅 LED）
 _WHITE = (1, 1, 1, 1)
 
 
@@ -206,12 +206,17 @@ class PyBulletWorld:
         p = self.p
         self.lit_idx = int(idx)
         z, y = self._hole_world_zy("bonus", self.lit_idx)
-        pos = [self.cfg.field.dist_x - 0.002, -z, y]
+        pos = [self.cfg.field.dist_x - 0.004, -z, y]
         q = self._quat_z_to(np.array([-1.0, 0.0, 0.0]))
         if self._lit_body is None:
-            self._lit_body = self._mk_visual(
-                p.GEOM_CYLINDER, _C_LIT,
-                radius=self.cfg.field.bonus_d / 2 * 0.9, length=0.004)
+            # 紅色 LED 燈環（官方：沿孔緣一圈紅燈條，非整格發紅）：inner=孔半徑, 外加約2cm 寬
+            from .board_mesh import ring_obj_path
+            ri = self.cfg.field.bonus_d / 2
+            ring = str(ring_obj_path(ri, ri + 0.02))
+            vis = p.createVisualShape(p.GEOM_MESH, fileName=ring, rgbaColor=_C_LIT,
+                                      physicsClientId=self.client)
+            self._lit_body = p.createMultiBody(0, -1, vis, [0, 0, 0],
+                                               physicsClientId=self.client)
         p.resetBasePositionAndOrientation(self._lit_body, pos, q, physicsClientId=self.client)
 
     # ── 投球 / 物理步進 ───────────────────────────────────────
