@@ -83,6 +83,21 @@ class TeleopSim:
 
         self._make_controls()
 
+        # 錄影：3D 視窗用 PyBullet 內建 MP4 記錄；相機視窗另存 *_camera.mp4
+        self.record = getattr(args, "record", None)
+        self._vlog = None
+        self._cam_writer = None
+        if self.record:
+            import os as _os
+            d = _os.path.dirname(_os.path.abspath(self.record))
+            _os.makedirs(d, exist_ok=True)
+            try:
+                self._vlog = self.world.p.startStateLogging(
+                    self.world.p.STATE_LOGGING_VIDEO_MP4, self.record)
+                print(f"[錄影] PyBullet 3D 視窗 → {self.record}")
+            except Exception as e:                       # 某些環境無內建編碼器 → 仍錄相機視窗
+                print(f"[錄影] 3D 視窗錄製啟動失敗（{e}）；仍會錄相機視窗")
+
     # ── GUI 控制項 ────────────────────────────────────────────
     def _make_controls(self):
         p = self.world.p
@@ -208,6 +223,15 @@ class TeleopSim:
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, C_TEXT, 2, cv2.LINE_AA)
         cv2.putText(img, self.last_line, (12, img.shape[0] - 14),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.55, C_TARGET, 2, cv2.LINE_AA)
+        if self.record:
+            if self._cam_writer is None:
+                base = self.record[:-4] if self.record.lower().endswith(".mp4") else self.record
+                cp = base + "_camera.mp4"
+                h, w = img.shape[:2]
+                self._cam_writer = cv2.VideoWriter(
+                    cp, cv2.VideoWriter_fourcc(*"mp4v"), 30, (w, h))
+                print(f"[錄影] Robot camera → {cp}")
+            self._cam_writer.write(img)
         cv2.imshow("Robot camera", img)
 
     # ── 主迴圈 ───────────────────────────────────────────────
@@ -243,6 +267,14 @@ class TeleopSim:
                     break
                 time.sleep(1 / 120)
         finally:
+            if self._vlog is not None:
+                try:
+                    self.world.p.stopStateLogging(self._vlog)
+                except Exception:
+                    pass
+            if self._cam_writer is not None:
+                self._cam_writer.release()
+                print("[錄影] 已存檔")
             cv2.destroyAllWindows()
             self.world.disconnect()
 
@@ -263,6 +295,8 @@ def main():
     ap.add_argument("--no-drag", action="store_true", help="關閉空氣阻力")
     ap.add_argument("--no-spin", action="store_true", help="關閉球旋轉/Magnus 力")
     ap.add_argument("--glare", type=float, default=0.0, help="鏡頭眩光強度 0~1（模擬強光過曝）")
+    ap.add_argument("--record", default=None,
+                    help="錄製模擬影片到此 .mp4（3D 視窗）；另存 *_camera.mp4 為機器人相機視窗")
     args = ap.parse_args()
     TeleopSim(args).run()
 
