@@ -52,6 +52,52 @@ def _hole_int_index(group: str, idx: int) -> int:
     return idx if group == "main" else 9 + idx
 
 
+def hole_overlays(cfg, eye, forward, cam):
+    """對目前相機姿態，算每個可見孔的：投影橢圓(型變)、距離、方位/俯仰、傾角。
+
+    型變由「圓在透視下投影成的橢圓」短/長軸比反映（1.0=正圓、越小越斜）；
+    傾角=孔面法向與視線夾角。與感知用的是同一套投影幾何。
+    """
+    K = cam.matrix()
+    W, H = cam.width, cam.height
+    r_, d_, f_, _ = pcam._cam_axes(np.asarray(forward, float))
+    R = np.column_stack([r_, d_, f_])
+    eye = np.asarray(eye, float)
+    board_n = np.array([-1.0, 0.0, 0.0])                 # 網板面向 -X（朝機器人）
+    th = np.linspace(0, 2 * np.pi, 40, endpoint=False)
+    out = []
+    for (g, i, dia, C) in cfg.hole_centers():
+        cw = np.array([cfg.field.dist_x, -(cfg.field.grid_cx + float(C[0])),
+                       cfg.field.grid_cy + float(C[1])])
+        pc = R.T @ (cw - eye)
+        if pc[2] <= 0:
+            continue
+        cpx = K @ (pc / pc[2])
+        u, v = float(cpx[0]), float(cpx[1])
+        if not (0 <= u < W and 0 <= v < H):
+            continue
+        rim = cw + (dia / 2) * np.stack([np.zeros_like(th), -np.cos(th), np.sin(th)], 1)
+        pcs = (R.T @ (rim - eye).T).T
+        pcs = pcs[pcs[:, 2] > 0]
+        ell, ratio = None, 1.0
+        if len(pcs) >= 5:
+            rpx = (K @ (pcs / pcs[:, 2:3]).T).T[:, :2].astype(np.float32)
+            try:
+                ell = cv2.fitEllipse(rpx)
+                d1, d2 = ell[1]
+                ratio = float(min(d1, d2) / max(d1, d2)) if max(d1, d2) > 0 else 1.0
+            except cv2.error:
+                pass
+        dist = float(np.linalg.norm(cw - eye))
+        los = (cw - eye) / (dist + 1e-9)
+        out.append(dict(
+            g=g, i=i, is_bonus=(g == "bonus"), center=(u, v), ell=ell, ratio=ratio,
+            dist=dist, bearing=float(np.degrees(np.arctan2(pc[0], pc[2]))),
+            elev=float(np.degrees(np.arctan2(-pc[1], pc[2]))),
+            tilt=float(np.degrees(np.arccos(np.clip(abs(board_n @ los), 0, 1))))))
+    return out
+
+
 class TeleopSim:
     def __init__(self, args):
         self.args = args
@@ -60,6 +106,7 @@ class TeleopSim:
         self.world = PyBulletWorld(self.cfg, self.robot, gui=True,
                                    drag=not args.no_drag, spin=not args.no_spin)
         self.glare = args.glare
+        self.show_data = not getattr(args, "no_data", False)
         self.disp_cam = _scaled_cam(self.cfg.camera, 0.5)
         self.K = self.cfg.camera.matrix()
 
@@ -119,11 +166,36 @@ class TeleopSim:
 
     # ── 感知（自動模式）─────────────────────────────────────────
     def _survey_pose(self):
-        board_c = np.array([self.cfg.field.dist_x, -self.cfg.field.grid_cx, self.cfg.field.grid_cy])
-        forward = board_c - self.world.pivot
-        forward = forward / np.linalg.norm(forward)
-        eye = self.world.pivot + forward * 0.30        # 相機在槍口，避免拍到自己的發射器
-        return eye, forward
+        """掃視姿態：自動挑「讓 12 孔都完整入框」的瞄準高度（掃描 min-margin 最大者）。"""
+        if getattr(self, "_survey_cache", None) is not None:
+            return self._survey_cache
+        K = self.cfg.camera.matrix()
+        W, H = self.cfg.camera.width, self.cfg.camera.height
+        holes = [(self.cfg.field.grid_cx + float(C[0]), self.cfg.field.grid_cy + float(C[1]),
+                  float(d) / 2) for (_g, _i, d, C) in self.cfg.hole_centers()]
+
+        def pose(az):
+            bc = np.array([self.cfg.field.dist_x, -self.cfg.field.grid_cx, az])
+            fwd = bc - self.world.pivot
+            fwd = fwd / np.linalg.norm(fwd)
+            return self.world.pivot + fwd * 0.30, fwd   # 相機在槍口，避免拍到自己的發射器
+
+        def min_margin(az):
+            eye, fwd = pose(az)
+            r_, d_, f_, _ = pcam._cam_axes(fwd)
+            R = np.column_stack([r_, d_, f_])
+            m = 1e9
+            for (hz, hy, rr) in holes:
+                pc = R.T @ (np.array([self.cfg.field.dist_x, -hz, hy]) - eye)
+                u = K @ (pc / pc[2])
+                rpx = K[0, 0] * rr / pc[2]
+                m = min(m, u[1] - rpx, H - (u[1] + rpx), u[0] - rpx, W - (u[0] + rpx))
+            return m
+
+        azs = np.linspace(self.cfg.field.grid_cy - 0.1, self.cfg.field.grid_cy + 0.4, 26)
+        best = max(azs, key=min_margin)
+        self._survey_cache = pose(best)
+        return self._survey_cache
 
     def _truth_aims(self, eye, forward) -> list[HoleAim]:
         right, down, f, _ = pcam._cam_axes(forward)
@@ -223,6 +295,10 @@ class TeleopSim:
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, C_TEXT, 2, cv2.LINE_AA)
         cv2.putText(img, self.last_line, (12, img.shape[0] - 14),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.55, C_TARGET, 2, cv2.LINE_AA)
+        ov = hole_overlays(self.cfg, eye, forward, self.disp_cam)
+        self._draw_overlays(img, ov)
+        if self.show_data:
+            self._draw_data_window(ov)
         if self.record:
             if self._cam_writer is None:
                 base = self.record[:-4] if self.record.lower().endswith(".mp4") else self.record
@@ -233,6 +309,40 @@ class TeleopSim:
                 print(f"[錄影] Robot camera → {cp}")
             self._cam_writer.write(img)
         cv2.imshow("Robot camera", img)
+
+    def _draw_overlays(self, img, ov):
+        """在相機影像上，為每個孔畫投影橢圓 + 簡短標籤（亮孔紅、加分橙、一般青）。"""
+        lit = self.world.lit_idx
+        for o in ov:
+            is_lit = o["is_bonus"] and o["i"] == lit
+            col = (60, 60, 235) if is_lit else ((60, 170, 235) if o["is_bonus"]
+                                                else (200, 200, 120))
+            if o["ell"] is not None:
+                cv2.ellipse(img, o["ell"], col, 1, cv2.LINE_AA)
+            cx, cy = int(o["center"][0]), int(o["center"][1])
+            cv2.putText(img, f"{o['g'][0]}{o['i']} {o['dist']:.2f}m", (cx - 24, cy + 4),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.4, col, 1, cv2.LINE_AA)
+
+    def _draw_data_window(self, ov):
+        """額外視窗：每孔的距離/方位/俯仰/傾角/型變(短長軸比)表格，避免疊在畫面上。"""
+        rows = sorted(ov, key=lambda o: (o["g"], o["i"]))
+        W, rh = 470, 22
+        panel = np.full((rh * (len(rows) + 2) + 8, W, 3), (18, 18, 20), np.uint8)
+        F = cv2.FONT_HERSHEY_SIMPLEX
+        cv2.putText(panel, "ID    dist   bear   elev   tilt  defo", (10, 18), F, 0.5,
+                    (180, 180, 185), 1, cv2.LINE_AA)
+        lit = self.world.lit_idx
+        for k, o in enumerate(rows):
+            is_lit = o["is_bonus"] and o["i"] == lit
+            col = (90, 90, 240) if is_lit else ((90, 190, 240) if o["is_bonus"]
+                                                else (220, 220, 160))
+            tag = f"{o['g'][0]}{o['i']}" + ("*" if is_lit else " ")
+            txt = (f"{tag:5s} {o['dist']:4.2f}m {o['bearing']:+5.1f} {o['elev']:+5.1f} "
+                   f"{o['tilt']:4.0f}d {o['ratio']:4.2f}")
+            cv2.putText(panel, txt, (10, 18 + (k + 1) * rh), F, 0.48, col, 1, cv2.LINE_AA)
+        cv2.putText(panel, "defo=minor/major (1=circle)   *=lit bonus",
+                    (10, 18 + (len(rows) + 1) * rh), F, 0.42, (130, 130, 135), 1, cv2.LINE_AA)
+        cv2.imshow("Detections", panel)
 
     # ── 主迴圈 ───────────────────────────────────────────────
     def run(self):
@@ -297,6 +407,8 @@ def main():
     ap.add_argument("--glare", type=float, default=0.0, help="鏡頭眩光強度 0~1（模擬強光過曝）")
     ap.add_argument("--record", default=None,
                     help="錄製模擬影片到此 .mp4（3D 視窗）；另存 *_camera.mp4 為機器人相機視窗")
+    ap.add_argument("--no-data", action="store_true",
+                    help="關閉額外的偵測資料視窗（距離/傾角/型變表）")
     args = ap.parse_args()
     TeleopSim(args).run()
 
