@@ -1,0 +1,36 @@
+# 機器人幾何與發射器參數（PyBullet 物理沙盒用）
+# 數值來源：
+#   - 嘻諧們_參賽計劃書_0629.pdf + 嘻諧們.pdf（CAD）：發射器/彈倉/轉塔/相機設計
+#   - 2026_rule-1.pdf：機器人靜態尺寸上限 長50 x 寬50 x 高60cm、重<30kg
+# ⚠️ 多數尺寸是「依 CAD 比例 + 規則上限」的合理推論，標「待實測」；量到真值後覆蓋本檔即可。
+# 座標約定與 field.yaml/發射點系一致：x 前(朝網板)、y 上、z 右。
+
+chassis:                 # 車體（四輪雙馬達差速；投球時視為定點靜止）
+  length: 0.45           # 前後 (m)  待實測（逼近 50cm 上限求穩定）
+  width: 0.45            # 左右 (m)  待實測
+  height: 0.10           # 底盤上緣離地 (m)  待實測（輪半徑+底板）
+  mass: 8.0              # (kg) 估（含電池/運算，遠低於 30kg 上限）
+  wheel_diameter: 0.10   # (m) 估
+
+launcher:                # 雙飛輪對夾摩擦投射
+  type: dual_flywheel
+  flywheel_diameter: 0.12   # (m) 文件明列（r=0.06）
+  flywheel_rpm: 1700        # 實設轉速（補球體擠壓/打滑；理論 1592）
+  muzzle_height: 0.40       # 發射口離地 (m) = field.launch_h；待實測
+  pivot_forward: 0.0        # 轉塔樞軸相對底盤中心的前移 (m)
+
+turret:                  # 轉塔：迴轉滾珠軸承(yaw) + 90°扇形齒輪+Y架(pitch)，步進馬達雙軸
+  yaw_min_deg: -180
+  yaw_max_deg: 180
+  pitch_min_deg: 0
+  pitch_max_deg: 90
+
+magazine:                # 彈倉轉輪：每倉4顆、齒輪齒條推球、清空自動換倉
+  balls_per_chamber: 4
+  chambers: 7            # 4×7=28 ≥ 27 顆
+  drum_diameter: 0.26    # (m) 估（4×Ø7cm 球排列 + 機構）
+  drum_length: 0.30      # (m) 估（≈4 顆球長）
+
+camera:                  # 與槍管同軸、隨轉塔轉動（內參/外參在 field.yaml）
+  coaxial: true
+  forward_offset: 0.02   # 相機沿槍管方向前移 (m)

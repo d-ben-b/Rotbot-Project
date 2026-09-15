@@ -1,3 +1,11 @@
+# 產生的合成資料集 / 訓練輸出 / 模型權重（勿入庫）
+datasets/
+runs/
+*.pt
+
+# 程序化生成的網板碰撞網格快取（依需求重建）
+rotbot/sim/assets/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
