@@ -19,6 +19,7 @@ rotbot/
     detector.py      # YOLO 偵測介面（P1 實作）
     camera.py        # make_camera()、RealCamera（USB webcam）
     imx296.py        # IMX296Camera：Jetson 機上相機（V4L2 raw + ISP）✅ 見 docs/imx296_jetson.md
+    intrinsics.py    # 相機內參標定演算法（棋盤格）✅ 工具：tools/calibrate_camera.py
   decision/
     ballistics.py    # 拋體瞄準模型（無阻力解析解）✅
     calibration.py   # 線上自適應校正「找手感」✅

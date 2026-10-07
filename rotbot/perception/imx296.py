@@ -27,6 +27,7 @@ from ..hal import Camera
 # ══════════════════════════ sensor 常數 ══════════════════════════
 # (寬, 高, 最高 fps)。兩個都是驅動提供的模式；720p 是中央裁切，不是縮放。
 SENSOR_MODES = ((1456, 1088, 60), (1280, 720, 90))
+PIXEL_PITCH_MM = 0.00345  # 像素尺寸；鏡頭焦距 (mm) = fx (px) × 這個值
 BLACK_LEVEL = 60          # 10-bit 黑階（Raspberry Pi 標定資料 3840/64）
 WHITE_LEVEL = 1023
 EXPOSURE_US_RANGE = (15, 15700)

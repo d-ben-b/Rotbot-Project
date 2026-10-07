@@ -57,6 +57,25 @@ cam.release()
 實測：`read()` 59 fps（每張 17 ms，其中 ISP 約 11 ms）；`camera_hw.ccm: false` 時 ISP 約 3 ms。
 `read()` 一律回傳最新一張，處理比 60 fps 慢時舊的會被丟掉，不會累積延遲。
 
+## 內參標定
+
+內參是把「孔在畫面上的位置與大小」換算成真實距離與角度所需的數字（像素單位的焦距 fx/fy、主點 cx/cy、
+鏡頭畸變）。**鏡頭的光圈與對焦先調好並鎖緊再做**；換鏡頭或重新對焦後要重做。
+
+1. 印出 [checkerboard_A4.pdf](checkerboard_A4.pdf)（A4 橫式、「實際大小 / 100%」），平貼在硬紙板或墊板上。
+   板子一定要平。格子實際印成幾 mm 不影響內參。
+2. `python3 -m tools.calibrate_camera`，用瀏覽器開 `http://localhost:8081`
+   （別台電腦看：加 `--lan`，開 `http://<Jetson IP>:8081`）。
+3. 把棋盤格拿到相機前約 0.3–0.8 m，整張都要在畫面內。每換一個位置停住約半秒，
+   畫面邊框閃綠色＝收到一張。要把畫面上的綠色區塊塗滿（尤其四個角落），
+   並且有幾張把板子往左右、上下傾斜 20–40 度。
+4. 收滿 20 張後自動計算。結果印在終端機並存到 `runs/calibration/<時間>/result.yaml`：
+   重投影誤差 RMS < 0.5 px 算良好；同時會顯示換算出的鏡頭焦距與視角。
+5. 把結果的 `camera:` 區塊覆蓋到 `configs/field.yaml`。
+
+`configs/field.yaml` 的 `camera:` 目前沒有畸變係數的欄位；標定結果顯示四角位移只有 1–2 px 的話可以忽略，
+比較大的話要在 PnP 前先對偵測到的孔中心做去畸變。
+
 ## 要知道的幾件事
 
 - **不走 Argus / `nvarguscamerasrc`**。Argus 沒有這顆 sensor 的 tuning，自動曝光會持續震盪，也不能固定短曝光。
