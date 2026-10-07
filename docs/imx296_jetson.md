@@ -49,32 +49,56 @@ from rotbot.config import load_config
 from rotbot.perception.camera import make_camera
 
 cam = make_camera(load_config())
-frame = cam.read()          # 最新一張，BGR uint8 (1088, 1456, 3)
+frame = cam.read()          # 最新一張，BGR uint8 (1088, 1456, 3)，已去畸變
+K = cam.intrinsics()        # 這張影像的針孔內參（PnP 用這個）
 cam.set_exposure(250)       # µs，執行中可改
 cam.release()
 ```
 
-實測：`read()` 59 fps（每張 17 ms，其中 ISP 約 11 ms）；`camera_hw.ccm: false` 時 ISP 約 3 ms。
+實測：`read()` 47–50 fps（每張約 20 ms：ISP 約 11 ms + 去畸變約 3 ms + 取像複製）；
+未標定（不去畸變）時 59 fps；`camera_hw.ccm: false` 時 ISP 約 3 ms。
 `read()` 一律回傳最新一張，處理比 60 fps 慢時舊的會被丟掉，不會累積延遲。
 
 ## 內參標定
 
-內參是把「孔在畫面上的位置與大小」換算成真實距離與角度所需的數字（像素單位的焦距 fx/fy、主點 cx/cy、
-鏡頭畸變）。**鏡頭的光圈與對焦先調好並鎖緊再做**；換鏡頭或重新對焦後要重做。
+內參是把「孔在畫面上的位置與大小」換算成真實距離與角度所需的數字（像素單位的焦距、主點、鏡頭畸變）。
+**鏡頭的光圈與對焦先調好並鎖緊再做**；換鏡頭或重新對焦後要重做。
 
-1. 印出 [checkerboard_A4.pdf](checkerboard_A4.pdf)（A4 橫式、「實際大小 / 100%」），平貼在硬紙板或墊板上。
-   板子一定要平。格子實際印成幾 mm 不影響內參。
+目前的結果（2026-10-07，6 mm 鏡頭，存在 `configs/field.yaml` 的 `camera_calib:`）：
+原始 fx 1922.6 / fy 1924.0、主點 (777.7, 578.9)、k1 −0.508、k2 +0.269；RMS 0.71 px（39 張）。
+鏡頭實際視角 44.6°×32.9°，**桶狀畸變很明顯：畫面四角位移約 129 px**。
+
+### 相機類別怎麼用這份標定
+
+`IMX296Camera.read()` 回傳的是**去畸變後**的影像，`intrinsics()` 回傳該影像的針孔內參
+（fx = fy = 1794.1，主點同上）。所以 YOLO 與 PnP 都當它是理想針孔相機即可，
+**但要用 `camera.intrinsics()`，不要用 `cfg.camera.matrix()`** —— `field.yaml` 的 `camera:` 是模擬與合成資料用的相機模型
+（1920×1080、視角 69°），跟實機刻意分開存（原因見下方「6 mm 鏡頭與定位」）。
+
+去畸變後畫面上下緣中央各有一小條黑邊（約佔 1%），是為了保留完整的水平視角。
+`camera_hw.undistort_interp`：`nearest`（預設，約 3 ms）或 `linear`（約 18 ms，邊緣較平滑）。
+要拿鏡頭原始影像用 `read_distorted()`。
+
+### 重新標定的步驟
+
+1. 印出 [checkerboard_A4.pdf](checkerboard_A4.pdf)（A4 橫式、「實際大小 / 100%」），**整張平貼在硬板或紙箱上**。
+   直接手拿紙會彎，結果不能用（實測 RMS 1.22 px、主點偏 200 px）。格子實際印成幾 mm 不影響內參。
 2. `python3 -m tools.calibrate_camera`，用瀏覽器開 `http://localhost:8081`
    （別台電腦看：加 `--lan`，開 `http://<Jetson IP>:8081`）。
-3. 把棋盤格拿到相機前約 0.3–0.8 m，整張都要在畫面內。每換一個位置停住約半秒，
-   畫面邊框閃綠色＝收到一張。要把畫面上的綠色區塊塗滿（尤其四個角落），
-   並且有幾張把板子往左右、上下傾斜 20–40 度。
-4. 收滿 20 張後自動計算。結果印在終端機並存到 `runs/calibration/<時間>/result.yaml`：
-   重投影誤差 RMS < 0.5 px 算良好；同時會顯示換算出的鏡頭焦距與視角。
-5. 把結果的 `camera:` 區塊覆蓋到 `configs/field.yaml`。
+3. 把棋盤格拿到相機前 **0.4–0.8 m**，整張都要在畫面內。每換一個位置停住約半秒，畫面邊框閃綠色＝收到一張。
+   要把綠色區塊塗滿（尤其四個角落），並且有幾張把板子往左右、上下傾斜 20–40 度。
+   拿太遠（板子不到畫面寬度的 1/5）工具會拒收：遠的照片誤差數字漂亮，但焦距與主點定不準。
+4. 收滿 20 張後自動計算，結果印在終端機並存到 `runs/calibration/<時間>/`。RMS < 0.5 px 良好，< 1 px 可用。
+5. 把印出的 `camera_calib:` 區塊覆蓋到 `configs/field.yaml`。
+6. 想更穩：多拍一輪，然後合併計算
+   `python3 -m tools.calibrate_camera --resolve runs/calibration/<第一次> runs/calibration/<第二次>`。
 
-`configs/field.yaml` 的 `camera:` 目前沒有畸變係數的欄位；標定結果顯示四角位移只有 1–2 px 的話可以忽略，
-比較大的話要在 PnP 前先對偵測到的孔中心做去畸變。
+### 6 mm 鏡頭與定位
+
+把模擬用的相機換成這顆 6 mm 的實際視角後，現有的「孔編號指派」在只看到部分板面時會認錯孔。
+合成測試（完美偵測、隨機視角 2.0–3.2 m、各 120 個場景）中，出現「某個孔定位偏差 > 10 cm」的場景比例：
+3.5 mm 8%、4 mm 23%、5 mm 62%、**6 mm 91%**。這是待解的問題（換短焦鏡頭，或讓孔編號指派能處理部分視野），
+在解決之前 `camera:` 不改成實機內參，以免模擬與既有測試失效。
 
 ## 要知道的幾件事
 
@@ -87,5 +111,4 @@ cam.release()
 - **8333 µs 是 60 Hz 市電燈光下不閃的曝光**。用更短的曝光時，畫面亮度可能逐張變動（看燈具而定）。
 - **時間戳**（`cam.timestamp`）來自 sensor 時序，相鄰兩張固定差 16.56 ms，適合算球速；
   但它跟 `time.monotonic()` 不是同一個時鐘，只能拿來算差值。
-- **內參還沒標定**。`field.yaml` 的 `camera:` 仍是 1920×1080 的範例值，`IMX296Camera.intrinsics()` 會拒絕回傳；
-  標定後把 `camera:` 改成 1456×1088 的真實內參。
+- **標定只對目前的鏡頭狀態有效**。動過對焦環、光圈以外的任何東西（換鏡頭、調後焦環）都要重新標定。

@@ -44,7 +44,14 @@ def test_solve_recovers_known_intrinsics():
     assert abs(res.dist[0] - DIST_TRUE[0]) < 0.03
     hfov, vfov = res.fov_deg()
     assert abs(hfov - 2 * math.degrees(math.atan(W / 2 / 1739))) < 0.6
-    assert "fx:" in res.yaml_block() and str(W) in res.yaml_block()
+    # 輸出的 YAML 區段要能直接被設定系統讀回來
+    import yaml
+    from rotbot.config import CameraCalibration
+    calib = CameraCalibration(**yaml.safe_load(res.yaml_block())["camera_calib"])
+    assert (calib.width, calib.height) == (W, H) and len(calib.dist) == 5
+    # 桶狀畸變：去畸變後的焦距比原始 fx 小（保留完整水平視角），實際視角比針孔算的寬
+    assert 0.85 * res.fx < calib.out_f < res.fx
+    assert res.true_fov_deg()[0] > res.fov_deg()[0]
 
 
 def test_solve_drops_a_bad_view_and_needs_enough_views():
@@ -93,6 +100,7 @@ def test_collector_wants_steady_new_and_spread_views():
     col = ViewCollector((W, H), target=3)
     base = np.stack(np.meshgrid(np.arange(9) * 40.0, np.arange(6) * 40.0), -1).reshape(-1, 2) + 50
     assert col.offer(None, 0.0) == "none"
+    assert col.offer(base * 0.5, 0.5) == "far"         # 板子在畫面上太小（太遠）不收
     assert col.offer(base, 1.0) == "moving"            # 第一次看到：還不知道穩不穩
     assert col.offer(base + 30, 1.1) == "moving"       # 還在動
     assert col.offer(base + 30.5, 1.2) == "added"      # 穩住了

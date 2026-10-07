@@ -42,6 +42,7 @@ from rotbot.perception.intrinsics import (PATTERN, SQUARE_M, ViewCollector, find
 OUT_ROOT = Path(__file__).resolve().parent.parent / "runs" / "calibration"
 MIN_VIEWS = 8
 HINTS = {"none": "沒看到完整的棋盤格（整張板子都要在畫面內，不要反光）",
+         "far": "太遠了，拿近一點（棋盤格要佔畫面寬度的四分之一以上，約 0.4–0.8 m）",
          "moving": "拿穩，停住不要動…",
          "duplicate": "這個位置收過了，換個位置、距離或傾斜角度",
          "added": "✔ 收到一張"}
@@ -110,15 +111,17 @@ class Session:
     def finish(self) -> None:
         res = solve_intrinsics(self.collector.views, self.image_size, self.pattern, self.square_m)
         from rotbot.perception.imx296 import PIXEL_PITCH_MM
-        hfov, vfov = res.fov_deg()
+        hfov, vfov = res.true_fov_deg()
         text = (f"重投影誤差 RMS：{res.rms_px:.2f} px（{res.quality()}；用了 {res.n_views} 張）\n"
-                f"視角：水平 {hfov:.1f}°、垂直 {vfov:.1f}°\n"
-                f"換算鏡頭焦距：約 {res.fx * PIXEL_PITCH_MM:.2f} mm（IMX296 像素 3.45 µm）\n"
+                f"鏡頭實際視角（含畸變）：水平 {hfov:.1f}°、垂直 {vfov:.1f}°"
+                f"（相當於 {res.output_focal() * PIXEL_PITCH_MM:.2f} mm 鏡頭）\n"
                 f"畸變在畫面四角造成的位移：{res.max_distortion_px():.1f} px\n\n"
-                f"{res.yaml_block(time.strftime('（%Y-%m-%d）'))}")
+                f"把下面這段貼進（或覆蓋）configs/field.yaml：\n\n"
+                f"{res.yaml_block(time.strftime('（%Y-%m-%d 標定）'))}")
         self.out_dir.mkdir(parents=True, exist_ok=True)
         (self.out_dir / "result.yaml").write_text(
-            text.split("\n\n", 1)[1] + f"# 每張的重投影誤差 (px)：{[round(e, 2) for e in res.per_view_px]}\n",
+            res.yaml_block(time.strftime('（%Y-%m-%d 標定）'))
+            + f"# 每張的重投影誤差 (px)：{[round(e, 2) for e in res.per_view_px]}\n",
             encoding="utf-8")
         np.savez(self.out_dir / "corners.npz", views=np.array(self.collector.views),
                  image_size=self.image_size, pattern=self.pattern, square_m=self.square_m)
@@ -223,6 +226,8 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--make-board", action="store_true", help="只產生可列印的棋盤格 PDF 後結束")
+    ap.add_argument("--resolve", nargs="+", metavar="DIR",
+                    help="不開相機：把一或多次標定存下的 corners.npz 合併重新計算（給 runs/calibration/ 下的資料夾）")
     ap.add_argument("--views", type=int, default=20, help="要收集幾張（預設 20）")
     ap.add_argument("--square-mm", type=float, default=SQUARE_M * 1000,
                     help="格子邊長 (mm)；不影響內參，只影響板子距離的估計")
@@ -239,11 +244,25 @@ def main() -> None:
         print(f"已產生：{path}\nA4 橫式列印，選「實際大小 / 100%」，印好平貼在硬板上。")
         return
 
+    if args.resolve:
+        views, size = [], None
+        for d in args.resolve:
+            data = np.load(Path(d) / "corners.npz")
+            views += list(data["views"])
+            size = tuple(int(x) for x in data["image_size"])
+        res = solve_intrinsics(views, size, PATTERN, args.square_mm / 1000)
+        hfov, vfov = res.true_fov_deg()
+        print(f"合併 {len(args.resolve)} 次標定、共 {len(views)} 張 → 採用 {res.n_views} 張，"
+              f"RMS {res.rms_px:.2f} px（{res.quality()}）；鏡頭實際視角 {hfov:.1f}°×{vfov:.1f}°\n")
+        print(res.yaml_block(time.strftime("（%Y-%m-%d 標定）")))
+        return
+
     cfg = load_config()
     # 標定只需要幾何，不需要準確顏色：關掉色彩矩陣比較快
     hw = dataclasses.replace(cfg.camera_hw, exposure_us=args.exposure_us,
                              gain_db=args.gain_db, ccm=False)
-    cam = make_camera(dataclasses.replace(cfg, camera_hw=hw))
+    # camera_calib 清掉：標定要看鏡頭原始（未去畸變）的影像
+    cam = make_camera(dataclasses.replace(cfg, camera_hw=hw, camera_calib=None))
     try:
         first = cam.read()
         size = (first.shape[1], first.shape[0])

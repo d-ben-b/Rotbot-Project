@@ -21,7 +21,7 @@ import time
 import cv2
 import numpy as np
 
-from ..config import CameraConfig, CameraHardwareConfig
+from ..config import CameraCalibration, CameraConfig, CameraHardwareConfig
 from ..hal import Camera
 
 # ══════════════════════════ sensor 常數 ══════════════════════════
@@ -40,6 +40,24 @@ CCM_4560K = np.array([[2.1526, -0.8479, -0.3047],
                       [-0.1511, -0.5301, 1.6813]])
 
 
+_POOL = None
+N_BANDS = 4      # 影像切成幾條水平帶平行處理（numpy/OpenCV 運算時會放開 GIL）
+
+
+def _run_bands(fn, height: int) -> None:
+    """把 [0, height) 切成 N_BANDS 條偶數高度的帶，平行呼叫 fn(y0, y1)。"""
+    global _POOL
+    step = -(-height // N_BANDS // 2) * 2          # 偶數：接縫落在 Bayer 週期上
+    bands = [(y, min(y + step, height)) for y in range(0, height, step)]
+    if len(bands) == 1:
+        fn(0, height)
+        return
+    if _POOL is None:
+        from concurrent.futures import ThreadPoolExecutor
+        _POOL = ThreadPoolExecutor(N_BANDS, thread_name_prefix="rotbot-img")
+    list(_POOL.map(lambda yy: fn(*yy), bands))
+
+
 def _srgb_encode(x: np.ndarray) -> np.ndarray:
     """線性 0~1 → sRGB 編碼 0~1。"""
     return np.where(x <= 0.0031308, 12.92 * x, 1.055 * np.power(x, 1 / 2.4) - 0.055)
@@ -51,10 +69,9 @@ class BayerISP:
 
     ccm=None 走快速路徑（8-bit 去馬賽克、不做色彩矩陣）：顏色較淡但更快，
     適合只看亮度/形狀的用途。
-    整張影像切成數條水平帶平行處理（numpy/OpenCV 運算時會放開 GIL）。
+    整張影像切成數條水平帶平行處理。
     """
 
-    BANDS = 4
     _MARGIN = 2     # 每條帶上下多算 2 列再裁掉，去馬賽克在接縫處才不會有邊界誤差（偶數＝不動 Bayer 相位）
 
     def __init__(self, wb_r: float = 3.05, wb_b: float = 1.85,
@@ -78,7 +95,6 @@ class BayerISP:
             self._gamma = np.full(16384, 255, np.uint8)
             self._gamma[:4096] = (_srgb_encode(np.arange(4096) / 4095.0) * 255 + 0.5).astype(np.uint8)
         self._site_offset: np.ndarray | None = None
-        self._pool = None
 
     def _offsets(self, shape) -> np.ndarray:
         """每個像素在 _site_lut 裡的起點：R 站 0、G 站 1024、B 站 2048。"""
@@ -106,15 +122,7 @@ class BayerISP:
         h, w = raw16.shape
         out = np.empty((h, w, 3), np.uint8)
         offsets = self._offsets(raw16.shape)
-        step = -(-h // self.BANDS // 2) * 2          # 帶的高度取偶數，接縫才會落在 Bayer 週期上
-        bands = [(y, min(y + step, h)) for y in range(0, h, step)]
-        if len(bands) == 1:
-            self._band(raw16, offsets, out, 0, h)
-            return out
-        if self._pool is None:
-            from concurrent.futures import ThreadPoolExecutor
-            self._pool = ThreadPoolExecutor(self.BANDS, thread_name_prefix="isp")
-        list(self._pool.map(lambda yy: self._band(raw16, offsets, out, *yy), bands))
+        _run_bands(lambda y0, y1: self._band(raw16, offsets, out, y0, y1), h)
         return out
 
 
@@ -321,16 +329,31 @@ class V4L2Capture:
 class IMX296Camera(Camera):
     """Raspberry Pi Global Shutter Camera。read() 回傳最新一張 BGR 影像。
 
-    擷取解析度跟著 cam_cfg（內參）的寬高走，必須是 sensor 支援的模式；
-    內參還是範例值（寬高對不上）時仍可 read()，但 intrinsics() 會拒絕回傳錯的 K。
+    有標定資料（calib）時：
+      * 擷取解析度用標定時的解析度；
+      * read() 回傳**去畸變後**的影像（沒有資料的邊角是黑的）；
+      * intrinsics() 回傳該影像的針孔內參。
+      所以 YOLO 與 PnP 不需要知道鏡頭有畸變，只要用 camera.intrinsics() 而不是 cfg.camera。
+    沒有標定資料時：擷取解析度跟著 cam_cfg 走（須為 sensor 支援的模式，否則用全解析度），
+      read() 回傳鏡頭原始影像；cam_cfg 的寬高對不上時 intrinsics() 會拒絕回傳錯的 K。
     """
 
-    def __init__(self, cam_cfg: CameraConfig, hw: CameraHardwareConfig | None = None):
+    def __init__(self, cam_cfg: CameraConfig, hw: CameraHardwareConfig | None = None,
+                 calib: CameraCalibration | None = None):
         self.cam_cfg = cam_cfg
         self.hw = hw or CameraHardwareConfig()
-        size = (cam_cfg.width, cam_cfg.height)
-        self._calibrated = size in [(w, h) for w, h, _ in SENSOR_MODES]
-        self.width, self.height = size if self._calibrated else SENSOR_MODES[0][:2]
+        self.calib = calib
+        self._undistort_maps = None
+        modes = [(w, h) for w, h, _ in SENSOR_MODES]
+        if calib is not None:
+            if (calib.width, calib.height) not in modes:
+                raise ValueError(f"camera_calib 的解析度 {calib.width}x{calib.height} 不是 sensor 支援的模式 {modes}")
+            self.width, self.height = calib.width, calib.height
+            self._K = calib.output_matrix()
+        else:
+            size = (cam_cfg.width, cam_cfg.height)
+            self.width, self.height = size if size in modes else modes[0]
+            self._K = cam_cfg.matrix() if size in modes else None
         self.isp = BayerISP(self.hw.wb_r, self.hw.wb_b, CCM_4560K if self.hw.ccm else None)
         self._cap: V4L2Capture | None = None   # 延後開啟：沒有硬體的環境也能 import 與建構
         self._exposure_us = self._clamp(self.hw.exposure_us, EXPOSURE_US_RANGE)
@@ -363,15 +386,35 @@ class IMX296Camera(Camera):
 
     # ---- hal.Camera ----
     def read(self) -> np.ndarray:
+        return self.undistort(self.read_distorted())
+
+    def read_distorted(self) -> np.ndarray:
+        """ISP 之後、去畸變之前的影像（鏡頭原始幾何）。相機標定要用這個。"""
         return self.isp(self.read_raw())
 
+    def undistort(self, image: np.ndarray) -> np.ndarray:
+        """鏡頭原始影像 → 符合 intrinsics() 的針孔影像。沒有標定資料時原樣回傳。"""
+        if self.calib is None:
+            return image
+        nearest = self.hw.undistort_interp == "nearest"
+        if self._undistort_maps is None:
+            mx, my = cv2.initUndistortRectifyMap(
+                self.calib.matrix(), np.array(self.calib.dist), None,
+                self._K, (self.width, self.height), cv2.CV_32FC1)
+            # 定點格式的對應表最快。最近鄰要用「四捨五入」過的座標，直接取整數部分會整張偏半個像素
+            self._undistort_maps = cv2.convertMaps(mx, my, cv2.CV_16SC2, nninterpolation=nearest)
+        # 實測（Orin Nano）：最近鄰 2.8 ms、雙線性 18 ms。OpenCV 內部已經平行化，不要再自己分帶
+        if nearest:
+            return cv2.remap(image, self._undistort_maps[0], None, cv2.INTER_NEAREST)
+        return cv2.remap(image, *self._undistort_maps, cv2.INTER_LINEAR)
+
     def intrinsics(self) -> np.ndarray:
-        if not self._calibrated:
+        if self._K is None:
             raise RuntimeError(
-                f"configs/field.yaml 的 camera 內參是 {self.cam_cfg.width}x{self.cam_cfg.height}，"
-                f"但 IMX296 輸出 {self.width}x{self.height}。請先標定相機並覆蓋 camera: 區段，"
-                "不然 PnP 算出的距離會是錯的。")
-        return self.cam_cfg.matrix()
+                f"相機尚未標定：configs/field.yaml 沒有 camera_calib，而 camera 內參是 "
+                f"{self.cam_cfg.width}x{self.cam_cfg.height}，IMX296 輸出 {self.width}x{self.height}。"
+                "請跑 tools/calibrate_camera.py，不然 PnP 算出的距離會是錯的。")
+        return self._K.copy()
 
     def release(self) -> None:
         if self._cap is not None:

@@ -73,9 +73,12 @@ class ViewCollector:
     GRID = (6, 4)            # 把畫面切成 6×4 格來統計角點涵蓋到哪裡
 
     def __init__(self, image_size: tuple[int, int], target: int = 20,
-                 steady_px: float = 2.0, min_coverage: float = 0.8):
+                 steady_px: float = 2.0, min_coverage: float = 0.8, min_span: float = 0.2):
         self.width, self.height = image_size
         self.target, self.steady_px, self.min_coverage = target, steady_px, min_coverage
+        # 板子在畫面上至少要這麼寬（佔畫面寬度的比例）。太小的話每張能約束的資訊很少：
+        # 實機上一批全在 1.3–1.8 m 拍的（板寬只佔 15–20%）RMS 只有 0.45 px，但焦距偏了 6%、主點偏了約 100 px
+        self.min_span = min_span
         # 角點平均要移動這麼多才算新的一張。板子必須整張在畫面內，能移動的範圍有限，
         # 門檻太高的話收十幾張就再也收不進去（原本用 6%，模擬操作卡在 13 張）
         self.novel_px = 0.03 * math.hypot(*image_size)
@@ -84,10 +87,13 @@ class ViewCollector:
         self._last: tuple[np.ndarray, float] | None = None
 
     def offer(self, corners: np.ndarray | None, now: float) -> str:
-        """餵一張畫面的角點。回傳 "none" | "moving" | "duplicate" | "added"。"""
+        """餵一張畫面的角點。回傳 "none" | "far" | "moving" | "duplicate" | "added"。"""
         if corners is None:
             self._last = None
             return "none"
+        if np.ptp(corners, axis=0).max() < self.min_span * self.width:
+            self._last = None
+            return "far"
         last, self._last = self._last, (corners, now)
         # 跟上一張比：沒拿穩的畫面有動態模糊，角點不準
         if last is None or now - last[1] > 1.0 or \
@@ -148,14 +154,39 @@ class IntrinsicsResult:
             return "良好"
         return "可用" if self.rms_px < 1.0 else "不佳，建議重拍"
 
+    def true_fov_deg(self) -> tuple[float, float]:
+        """含畸變的真實視角（畫面左右、上下邊緣中點之間的夾角）。"""
+        K, d = self.matrix(), np.array(self.dist)
+        edge = np.array([[[0.0, self.cy]], [[self.width - 1.0, self.cy]],
+                         [[self.cx, 0.0]], [[self.cx, self.height - 1.0]]])
+        n = cv2.undistortPoints(edge, K, d).reshape(-1, 2)
+        ang = np.degrees(np.arctan(n))
+        return float(ang[1, 0] - ang[0, 0]), float(ang[3, 1] - ang[2, 1])
+
+    def output_focal(self) -> float:
+        """去畸變後輸出影像的焦距（像素，fx=fy）。
+
+        取「水平中線左右兩端剛好都有影像」的值：保留鏡頭完整的水平視角。垂直方向若鏡頭視角
+        稍窄，上下緣中央會留一小條黑邊，換來的是不損失水平視角。主點沿用標定的 cx, cy。
+        """
+        K, d = self.matrix(), np.array(self.dist)
+        edge = np.array([[[0.0, self.cy]], [[self.width - 1.0, self.cy]]])
+        left, right = cv2.undistortPoints(edge, K, d).reshape(-1, 2)[:, 0]
+        return float(max(self.cx / abs(left), (self.width - 1 - self.cx) / right))
+
     def yaml_block(self, note: str = "") -> str:
-        hfov, vfov = self.fov_deg()
-        return (f"camera:           # 實機標定{note}：RMS {self.rms_px:.2f} px、{self.n_views} 張、"
-                f"FOV {hfov:.1f}°×{vfov:.1f}°\n"
-                f"  fx: {self.fx:.1f}\n  fy: {self.fy:.1f}\n  cx: {self.cx:.1f}\n  cy: {self.cy:.1f}\n"
+        """可直接貼進 configs/field.yaml 的 camera_calib 區段。"""
+        f = self.output_focal()
+        hfov = 2 * math.degrees(math.atan(self.width / 2 / f))
+        vfov = 2 * math.degrees(math.atan(self.height / 2 / f))
+        dist = ", ".join(f"{d:.5f}" for d in self.dist)
+        return (f"camera_calib:     # 實機相機標定{note}：RMS {self.rms_px:.2f} px、{self.n_views} 張、"
+                f"四角畸變 {self.max_distortion_px():.0f} px\n"
                 f"  width: {self.width}\n  height: {self.height}\n"
-                f"# 畸變係數 (k1, k2, p1, p2, k3)：{[round(d, 5) for d in self.dist]}"
-                f"，四角位移 {self.max_distortion_px():.1f} px\n")
+                f"  fx: {self.fx:.1f}       # 鏡頭原始內參（含畸變）\n  fy: {self.fy:.1f}\n"
+                f"  cx: {self.cx:.1f}\n  cy: {self.cy:.1f}\n"
+                f"  dist: [{dist}]   # k1, k2, p1, p2, k3\n"
+                f"  out_f: {f:.1f}    # 去畸變後影像的焦距（fx=fy）；視角 {hfov:.1f}°×{vfov:.1f}°\n")
 
 
 def solve_intrinsics(views: list[np.ndarray], image_size: tuple[int, int],

@@ -97,6 +97,39 @@ class CameraHardwareConfig:
     wb_r: float = 3.05           # 白平衡增益（相對綠色）
     wb_b: float = 1.85
     ccm: bool = True             # 是否套用色彩校正矩陣
+    undistort_interp: str = "nearest"   # 去畸變的內插："nearest"（快）| "linear"（邊緣較平滑）
+
+
+@dataclass(frozen=True)
+class CameraCalibration:
+    """實體相機的標定結果。實機相機用它把影像去畸變，並回報去畸變後影像的針孔內參。
+
+    跟 camera:（模擬/合成資料用的相機模型）分開存：兩者的解析度與視角可以不同。
+    """
+    width: int
+    height: int
+    fx: float                    # 以下四個＋dist：鏡頭原始（含畸變）的內參
+    fy: float
+    cx: float
+    cy: float
+    dist: tuple = ()             # 畸變係數 (k1, k2, p1, p2, k3)
+    out_f: float = 0.0           # 去畸變後輸出影像的焦距（fx=fy，像素）；0 = 沿用 fx
+
+    def __post_init__(self):
+        object.__setattr__(self, "dist", tuple(float(d) for d in self.dist))
+
+    def matrix(self) -> np.ndarray:
+        """鏡頭原始內參 K（搭配 dist 使用）。"""
+        return np.array([[self.fx, 0.0, self.cx],
+                         [0.0, self.fy, self.cy],
+                         [0.0, 0.0, 1.0]], dtype=np.float64)
+
+    def output_matrix(self) -> np.ndarray:
+        """去畸變後影像的針孔內參 K（下游 PnP 用這個）。主點沿用標定的 cx, cy。"""
+        f = self.out_f or self.fx
+        return np.array([[f, 0.0, self.cx],
+                         [0.0, f, self.cy],
+                         [0.0, 0.0, 1.0]], dtype=np.float64)
 
 
 @dataclass(frozen=True)
@@ -129,6 +162,7 @@ class Config:
     sim: SimConfig
     n_balls: int
     camera_hw: CameraHardwareConfig = dc_field(default_factory=CameraHardwareConfig)
+    camera_calib: CameraCalibration | None = None    # 沒有 = 實機相機尚未標定
 
     @property
     def k_drag(self) -> float:
@@ -181,4 +215,5 @@ def load_config(path: str | Path | None = None) -> Config:
         sim=SimConfig(**raw["sim"]),
         n_balls=int(raw["match"]["n_balls"]),
         camera_hw=CameraHardwareConfig(**raw.get("camera_hw", {})),
+        camera_calib=CameraCalibration(**raw["camera_calib"]) if raw.get("camera_calib") else None,
     )

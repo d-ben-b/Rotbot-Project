@@ -13,7 +13,7 @@ def make_camera(cfg: Config) -> Camera:
     hw = cfg.camera_hw
     if hw.backend == "imx296":
         from .imx296 import IMX296Camera   # 局部 import：沒用到就不載入 V4L2 那一包
-        return IMX296Camera(cfg.camera, hw)
+        return IMX296Camera(cfg.camera, hw, cfg.camera_calib)
     if hw.backend == "webcam":
         return RealCamera(cfg.camera, device=int(hw.device) if hw.device.isdigit() else 0)
     raise ValueError(f"未知的 camera_hw.backend: {hw.backend!r}（可用：imx296 / webcam）")
