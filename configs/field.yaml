@@ -53,6 +53,15 @@ camera:           # 相機內參（範例值：1920x1080、水平 FOV≈69°；�
   width: 1920
   height: 1080
 
+camera_hw:        # 實體相機的擷取設定（只有實機會讀；模擬/合成資料不受影響）
+  backend: imx296       # imx296 = Raspberry Pi Global Shutter Camera（Jetson CSI）；webcam = USB 鏡頭
+  device: /dev/video0   # webcam 時填裝置編號（如 "0"）
+  exposure_us: 8333     # 曝光 (µs)，15–15700。8333 在 60Hz 市電燈光下不閃；追高速球要縮到約 250（1/4000s）
+  gain_db: 0.0          # 類比增益 (dB)，0–48。每 +6dB 亮度加倍、雜訊也變多；先開大光圈再加 gain
+  wb_r: 3.05            # 白平衡增益（相對綠色）。預設＝sensor 標定資料 4640K；現場用
+  wb_b: 1.85            #   tools/camera_check.py --auto-wb 對著白紙量一次再覆蓋
+  ccm: true             # 套用色彩校正矩陣：顏色較準（紅色 LED 較飽和），但較慢
+
 camera_mount:     # 相機相對「發射點」的外參（⚠️ 全 0=相機在發射口且對齊，待實機標定 P5）
   dx: 0.0         # 右 (m)
   dy: 0.0         # 上 (m)，相機高於發射口為正

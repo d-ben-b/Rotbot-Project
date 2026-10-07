@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field as dc_field
 from pathlib import Path
 
 import numpy as np
@@ -88,6 +88,18 @@ class CameraConfig:
 
 
 @dataclass(frozen=True)
+class CameraHardwareConfig:
+    """實體相機的擷取設定。只有實機相機會讀；模擬與合成資料不受影響。"""
+    backend: str = "imx296"      # "imx296"（Jetson CSI）| "webcam"（cv2.VideoCapture）
+    device: str = "/dev/video0"  # webcam 時填裝置編號，如 "0"
+    exposure_us: float = 8333.0  # 曝光時間 (µs)
+    gain_db: float = 0.0         # 類比增益 (dB)
+    wb_r: float = 3.05           # 白平衡增益（相對綠色）
+    wb_b: float = 1.85
+    ccm: bool = True             # 是否套用色彩校正矩陣
+
+
+@dataclass(frozen=True)
 class CameraMount:
     """相機相對發射點的外參（camera→launcher）。全 0 = 相機在發射口且對齊。"""
     dx: float       # 右 (m)
@@ -116,6 +128,7 @@ class Config:
     camera_mount: CameraMount
     sim: SimConfig
     n_balls: int
+    camera_hw: CameraHardwareConfig = dc_field(default_factory=CameraHardwareConfig)
 
     @property
     def k_drag(self) -> float:
@@ -167,4 +180,5 @@ def load_config(path: str | Path | None = None) -> Config:
         camera_mount=CameraMount(**raw["camera_mount"]),
         sim=SimConfig(**raw["sim"]),
         n_balls=int(raw["match"]["n_balls"]),
+        camera_hw=CameraHardwareConfig(**raw.get("camera_hw", {})),
     )

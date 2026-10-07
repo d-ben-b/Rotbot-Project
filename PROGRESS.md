@@ -20,7 +20,7 @@
 | P3 致動 / 通訊 | ⏳ | UART 協定、賽制狀態機、安全停止 |
 | P4 模擬閉迴路 | ✅ 核心完成 | 感知→決策→致動→物理→計分→校正 全鏈跑完整場，校正提升成績 |
 | 互動物理沙盒（PyBullet） | ✅ 核心完成 | 依機器人 CAD/規則建模、真實剛體物理、手動⇄YOLO自動、機器人相機視窗 |
-| P5 硬體整合 / P6 賽前 | ⏳（等硬體） | 相機標定、Orin 部署、實機校正 |
+| P5 硬體整合 / P6 賽前 | ▶ P5 進行中（相機已到位，10/07）| 相機 HAL 已在實機取像；待：相機標定、Orin 部署、實機校正 |
 
 規模：Python ~2,300 行、26 個自動化測試（全綠）、13 個開發 commit。
 
@@ -134,6 +134,9 @@
 | 邊緣被切的孔 | 其 bbox 中心偏差，會拉高 PnP 誤差 | PnP 求解**排除碰到畫面邊緣**的偵測（只顯示不定位）|
 | 精度精修 | 距離平均 8.3cm，主因 bbox 中心≠透視圓心 | 需要更高精度時改用**橢圓中心**（順帶取得傾角）|
 | 合成→真實落差 | 目前全合成、無真實影像 | 硬體到位後用少量實拍微調（P5）|
+| **相機內參未標定** | 實機相機是 IMX296 1456×1088，`field.yaml` 的 `camera:` 仍是 1920×1080 範例值；`intrinsics()` 會拒絕回傳 | 棋盤格標定後覆蓋 `camera:`（含畸變）；合成資料/模型是否改用新解析度一併決定 |
+| **鏡頭視角** | 目前裝 6mm（45°×35°）。依 `field.yaml` 幾何推算（未實測）：相機離網框 2.5m 時一次只看得到 **7/12 孔**（3 個加分孔都在）、3.0m 以上才看得到全部；4–5mm 在 2.5m 就能看到全部。像圈已實測足夠（四角亮度約中心 88%）| 量相機到網框的實際距離；決定留 6mm（靠轉塔掃視）或換 4–5mm。詳見 `Parts purchasing/Camera/IMX296_Lens_Requirements.md` |
+| Jetson 執行環境 | 機上有 numpy 1.21 / OpenCV 4.8 / pytest 6.2.5；沒有 ultralytics、torch、pybullet、模型權重 | 建環境（Jetson 版 PyTorch 或 TensorRT）、把權重搬上去 |
 
 ---
 
@@ -141,7 +144,8 @@
 
 1. **P3 致動/通訊**：UART 協定（含 checksum/ack/逾時）、賽制狀態機（前 60 秒自主、安全停止、失效處理）。
 2. **P4 強化**：感知改接「真 YOLO + render 影像」的重版閉迴路；各階段延遲量測（估 Orin 預算）。
-3. **P5 硬體到位**：相機標定、`camera_mount` 外參標定、Orin/TensorRT 部署、實機校正表。
+3. **P5 硬體整合（相機已可取像）**：相機標定 → 覆蓋 `camera:` 內參、`camera_mount` 外參標定、
+   Orin/TensorRT 部署、用實拍影像驗證/微調 YOLO、實機校正表。
 4. 併行處理 §7 待確認事項（尤其**亮孔顏色**與 **dist_x/grid_cy 實測**）。
 
 > 完整階段規劃見 [ROADMAP.md](ROADMAP.md)；模組職責與快速試跑見 [README.md](README.md)。
@@ -152,6 +156,54 @@
 
 > **append-only**：每次更新只**新增**條目、不改舊條目，保留數字與決策的演進供工作日誌追蹤。
 > 上方 §0–§8 為「最新快照」；本區為「歷史紀錄」。新到舊排列。
+
+### 2026-10-07（續）
+
+- **`.gitignore` 移除 `rotbot` 那一行**（9/15 加入）。它讓 `rotbot/` 底下**新增**的檔案不出現在 `git status`
+  （`rotbot/perception/imx296.py` 因此一度被忽略）。`rotbot/sim/assets/` 另有專屬規則，仍然忽略。
+- **鏡頭需求文件改寫為 IMX296 版**：`Parts purchasing/Camera/e-CAM25_CUONX_Lens_Requirements.md`
+  → 改名 `IMX296_Lens_Requirements.md` 並整份重算（C/CS-mount、像圈 ≥ 1/2.9"、相機內建 IR-cut）。
+  舊版的「距離 7m、九宮格 5×3m、球速 18.3m/s」與規則書（檔板距網框約 250cm）及 `field.yaml` 不符，不再採用。
+- **視角重新計算**（用 `Config.hole_centers()` 的實際孔位、相機在發射口高度仰視、針孔模型、四邊留 40px；**推算，非實測**）：
+  完整入鏡孔數 6mm：2.5m → 7/12、3.0m → 12/12；5mm 與 4mm：2.5m 即 12/12；8mm：2.5m → 3/12。
+  **更正**：前一則快照寫「需約 48°×44°、焦距 ≤ 4.7mm」是用正對板面粗估的，高估了垂直需求；以本條為準。
+- **實測像圈**（目前的 6mm 鏡頭）：四角亮度約為中心的 88%，無暗角 → 涵蓋 1/2.9"（對角 6.27mm）沒問題。
+- **實測短曝光的進光量**（6mm 光圈全開、室內辦公室燈光）：8333µs/0dB 畫面平均亮度 115/255；
+  250µs/18dB 只有 62/255 → 這種燈光下 1/4000s 約需 30dB，雜訊會很重。比賽場地照明待現場量。
+- 本則只改文件與 `.gitignore`，程式碼未變動，測試結果同上一則（46 passed、1 skipped，替代執行器）。
+- **補：Jetson 裝了 pytest 6.2.5 後用真的 pytest 重跑**：`python3 -m pytest -q` → **46 passed、1 skipped**
+  （與替代執行器結果一致）；`ROTBOT_HW=1` 時 `tests/test_imx296.py` 10 passed（含實機煙霧測試）。
+  pytest 6 不認得 `pyproject.toml` 的 `pythonpath` 設定（只會多一行警告），在這台要用 `python3 -m pytest` 執行。
+
+### 2026-10-07
+
+- **★ 第一個實體硬體到位：機上相機（P5 開始）**。Raspberry Pi Global Shutter Camera（Sony IMX296，
+  1456×1088@60fps、global shutter）接上 Jetson Orin Nano Super 的 CAM1。取代原規劃的 e-CAM25_CUONX（AR0234）。
+  驅動是另外編的 kernel module + device-tree overlay（不在本 repo），建置方式與注意事項見新檔
+  `docs/imx296_jetson.md`。
+- **相機 HAL 實作**（新檔 `rotbot/perception/imx296.py`）：
+  - `V4L2Capture`：用 ioctl + mmap 直接從 `/dev/video0` 取 raw Bayer（RG10），不經 Argus、不依賴額外套件。
+    `read()` 一律回傳最新一張，處理較慢時丟舊張不累積延遲。
+  - `BayerISP`：黑階 → 白平衡 → 去馬賽克 → 色彩矩陣（Raspberry Pi 標定資料）→ sRGB，輸出 BGR uint8；
+    切 4 條水平帶平行處理。純 numpy/OpenCV，不碰硬體，可單元測試。
+  - `IMX296Camera(hal.Camera)`：曝光/增益可在執行中改；另提供 `read_raw()`、`timestamp`、`grey_world_gains`。
+  - `perception.camera.make_camera(cfg)`：依設定建立實體相機（`imx296` / `webcam`）。
+- **設定**：`configs/field.yaml` 新增 `camera_hw:` 區段（裝置、曝光、增益、白平衡、是否套色彩矩陣），
+  型別化為 `CameraHardwareConfig`；區段可省略（舊設定檔照常載入）。**沒有動 `camera:` 內參**
+  （仍是 1920×1080 範例值，合成資料與既有模型不受影響）。
+- **工具**：`tools/camera_check.py`（拍一張、量幀率與亮度、`--auto-wb` 量白平衡）。
+- **實機量測**（Jetson Orin Nano Super、L4T R36.4.4、25W；**非模擬**）：
+  - raw 取像 **60.4 fps、120 張零丟張**；含 ISP 的 `read()` **59.2 fps（每張 16.9 ms）**。
+  - ISP 單獨耗時：含色彩矩陣 **10.7 ms**（優化前單執行緒 48 ms）、不含 **3.4 ms**；輸出與浮點參考實作最多差 1 個灰階。
+  - 相鄰兩張時間戳固定差 **16.56 ms**（抖動 < 0.001 ms）；暫停 1 秒後下一次讀取 26 ms 內拿到新張（時間戳前進 1.027 s）。
+  - 曝光/增益寫入後直接讀 sensor 暫存器確認生效（8333µs→SHS1=0x22d、4000µs/6dB→SHS1=0x351/GAIN=0x3c）。
+  - 鏡頭對焦後從 raw 量到：邊緣 10–90% 寬度約 3.4 px、平坦區訊雜比約 33（0 dB、8333 µs、室內燈）。
+- **測試**：新增 `tests/test_imx296.py` 9 個（ISP 顏色/飽和/接縫、白平衡估計、設定相容、內參防呆、V4L2 結構大小）
+  + 1 個實機煙霧測試（`ROTBOT_HW=1` 才跑）。全套 **46 passed、1 skipped**；設 `ROTBOT_HW=1` 時 47 passed。
+  ⚠ 這台 Jetson 沒有裝 pytest/pip，以上是用**替代執行器**（逐一呼叫 test 函式）跑的，不是真的 `pytest`；
+  改動前同一方法的基準是 37 passed。
+- **還不能做的事**：`IMX296Camera.intrinsics()` 目前會拒絕回傳（內參未標定、解析度與設定不符）→ PnP 定位還不能在實機跑。
+  這台 Jetson 也還沒有 `ultralytics`/`torch`/`pybullet` 與模型權重，YOLO 尚未在實機影像上試過。
 
 ### 2026-09-09（追趕補記：8/19 之後的變更）
 
