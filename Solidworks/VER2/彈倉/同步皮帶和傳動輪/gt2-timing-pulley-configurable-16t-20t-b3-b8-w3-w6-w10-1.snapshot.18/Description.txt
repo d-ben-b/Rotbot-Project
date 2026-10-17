@@ -1,0 +1,31 @@
+GT2 Timing Pulley, Configurable
+
+CAD Model Link:
+https://grabcad.com/library/gt2-timing-pulley-configurable-16t-20t-b3-b8-w3-w6-w10-1
+
+Commonly used for 3d printers and other machine design projects.
+
+Uses design tables.
+Contains the following configurations:
+16T W3 B3
+16T W6 B5
+16T W6 B6
+16T W10 B5
+
+20T W6 B5
+20T W6 B8
+20T W10 B5
+20T W6 B4
+20T W10 B8
+
+Buy Links:
+https://www.aliexpress.us/item/2251832764163939.html
+https://www.aliexpress.us/item/2251832783246425.html
+
+Links to pulleys with and without teeth:
+
+https://grabcad.com/library/gt2-timing-idler-pulley-16-20-with-teeth-bore-3-4-5-8-mm-for-gt2-belt-width-6-10-mm-1
+
+https://grabcad.com/library/gt2-pulley-16-20-without-teeth-bore-3-4-5-mm-for-gt2-belt-width-6-10-mm-1
+
+#CAD #SolidWorks #3dmodel #GT2 #timingpulley
