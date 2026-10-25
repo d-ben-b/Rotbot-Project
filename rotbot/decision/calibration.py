@@ -10,6 +10,9 @@
 """
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import numpy as np
 
 from ..config import CalibrationConfig
@@ -53,3 +56,18 @@ class AdaptiveCalibrator:
         self.g_bias = np.clip(self.g_bias, -lim, lim)
         self.cell_off = np.clip(self.cell_off, -lim, lim)
         return True
+
+    # ── 存取：賽前練習學到的手感帶進正式賽（warm start）──────────
+    def save(self, path: str | Path) -> None:
+        state = dict(j_pitch=self.j_pitch, j_yaw=self.j_yaw,
+                     g_bias_deg=np.degrees(self.g_bias).tolist(),
+                     cell_off_deg=np.degrees(self.cell_off).tolist())
+        Path(path).write_text(json.dumps(state, indent=1), encoding="utf-8")
+
+    @classmethod
+    def load(cls, path: str | Path, cfg: CalibrationConfig) -> "AdaptiveCalibrator":
+        state = json.loads(Path(path).read_text(encoding="utf-8"))
+        c = cls(cfg, state["j_pitch"], state["j_yaw"], n_cells=len(state["cell_off_deg"]))
+        c.g_bias = np.radians(np.asarray(state["g_bias_deg"], float))
+        c.cell_off = np.radians(np.asarray(state["cell_off_deg"], float))
+        return c

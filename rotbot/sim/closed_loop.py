@@ -2,17 +2,22 @@
 """模擬閉迴路（P4）—— 感知 → 決策 → 致動 → 物理落點 → 校正，跑完整一場。
 
 把各層串成一場 27 球的比賽（圓孔版）：
-  1. 感知（模擬）：由真值孔位算相機量測 (距離/方位/俯仰) 並加雜訊 → HoleAim
+  1. 感知（模擬）：由真值孔位算相機量測 (距離/方位/俯仰) 並加誤差 → HoleAim
   2. 決策：plan_next_shot 選目標（亮孔優先）並算俯仰/水平
   3. 致動：AimCommand 經協定送 MockArduino（驗證通訊路徑）
   4. 物理：BallisticWorld 含空氣阻力 + 機構偏差投射 → 落點
   5. 計分 + 線上校正：依落點誤差微調，後續逐步收斂（「找手感」）
 
 這是硬體到位前的「軟體完成」里程碑：一鍵跑完整場並產出成績。
-真實影像的 YOLO 感知已於 P1 端到端驗證；此處感知用真值+雜訊以聚焦下游閉迴路。
+真實影像的 YOLO 感知已於 P1 端到端驗證；此處感知用真值+誤差以聚焦下游閉迴路。
+
+感知誤差分兩種（6m 重評估時拆開）：
+  * 系統偏差 bias_*：每場每孔抽一次。靜止場景下整板 PnP 的偏差逐幀幾乎不變 → 校正學得掉。
+  * 逐幀雜訊 noise_*：每球重抽（感測雜訊、轉塔回到掃視姿態的重複誤差）→ 校正學不掉。
 """
 from __future__ import annotations
 
+import dataclasses
 import math
 from dataclasses import dataclass, field
 
@@ -83,33 +88,82 @@ def _truth_holes(cfg: Config):
     return out
 
 
+def new_calibrator(cfg: Config) -> AdaptiveCalibrator:
+    """以腦內模型估靈敏度（實機只能用模型），建立 12 孔的線上校正器。"""
+    j_pitch, j_yaw = ballistics.estimate_sensitivity(
+        ballistics.model_shoot(cfg), (0.0, cfg.field.grid_cy), cfg)
+    return AdaptiveCalibrator(cfg.calibration, j_pitch, j_yaw, n_cells=12)
+
+
+def _session_world(cfg: Config, rng: np.random.Generator, v0_drift_frac: float) -> BallisticWorld:
+    """建立本場的真實世界；v0_drift_frac>0 時本場實際初速相對設定值隨機漂移（電量/溫度）。"""
+    if v0_drift_frac > 0:
+        k = 1.0 + rng.normal(0, v0_drift_frac)
+        cfg = dataclasses.replace(cfg, launch=dataclasses.replace(
+            cfg.launch, v0_real=cfg.launch.v0_real * k))
+    return BallisticWorld(cfg, rng)
+
+
+def practice_calibration(cfg: Config, rng: np.random.Generator, n_shots: int,
+                         v0_drift_frac: float = 0.0) -> AdaptiveCalibrator:
+    """賽前練習：對 9 個一般孔輪流試投 n_shots 球，回傳已「種好手感」的校正器。
+
+    對應 docs 的對策「賽前練習先投幾顆把全域偏移種好」，正式賽以此校正器開局（warm start）。
+    練習時落點由人工/相機量測，誤差含 meas_noise_m。
+    """
+    calib = new_calibrator(cfg)
+    world = _session_world(cfg, rng, v0_drift_frac)
+    mains = [h for h in _truth_holes(cfg) if h[0] == "main"]
+    for k in range(n_shots):
+        g, i, _diam, z, y = mains[k % len(mains)]
+        aim = ballistics.aim_for_target((z, y), cfg)
+        if aim is None:
+            continue
+        dp, dy = calib.correction(_hole_int_index(g, i))
+        land = world.shoot_real(aim[0] + dp, aim[1] + dy)
+        if land is None:
+            continue
+        e_z = z - land[0] + rng.normal(0, cfg.calibration.meas_noise_m)
+        e_y = y - land[1] + rng.normal(0, cfg.calibration.meas_noise_m)
+        calib.update(_hole_int_index(g, i), (e_z, e_y))
+    return calib
+
+
 def run_closed_loop(cfg: Config, rng: np.random.Generator, correct: bool = True,
-                    noise_d: float = 0.03, noise_ang: float = 0.5,
-                    on_shot=None) -> MatchReport:
+                    noise_d: float = 0.01, noise_ang: float = 0.1,
+                    bias_d: float = 0.0, bias_ang: float = 0.0,
+                    calib: AdaptiveCalibrator | None = None, v0_drift_frac: float = 0.0,
+                    learn: bool = True, on_shot=None) -> MatchReport:
     """跑一整場閉迴路；correct=False 為關閉線上校正的對照組。
 
+    noise_d/noise_ang: 逐幀感知雜訊 (m / deg, 1σ)；bias_d/bias_ang: 每場每孔系統偏差 (1σ)。
+    calib: 選填，已暖機的校正器（practice_calibration）；省略則從零開始。
+    learn=False：套用校正但比賽中不再更新（比賽時沒有落點量測、只用賽前練習學到的手感）。
+    v0_drift_frac: 本場實際初速相對設定值的隨機漂移 (1σ, 比例)。
     on_shot: 選填，每球呼叫一次 on_shot(payload)（供視覺化；見 _shot_payload）。
     """
     holes = _truth_holes(cfg)
     truth = {(g, i): (diam, z, y) for (g, i, diam, z, y) in holes}
     lit_idx = int(rng.integers(0, 3))                  # 隨機亮起一個加分孔
 
-    world = BallisticWorld(cfg, rng)
-    j_pitch, j_yaw = ballistics.estimate_sensitivity(
-        world.shoot, (0.0, cfg.field.grid_cy), cfg)
-    calib = AdaptiveCalibrator(cfg.calibration, j_pitch, j_yaw, n_cells=12)
+    world = _session_world(cfg, rng, v0_drift_frac)
+    calib = new_calibrator(cfg) if calib is None else calib
     planner = ShotPlanner(cfg)
     arduino = MockArduino()
     report = MatchReport()
+    # 感知系統偏差：每場、每孔各抽一次（整板 PnP 的偏差在靜止場景下逐幀幾乎不變）
+    hole_bias = {(g, i): (rng.normal(0, bias_d), rng.normal(0, bias_ang), rng.normal(0, bias_ang))
+                 for (g, i, *_rest) in holes}
 
     while planner.remaining > 0:
-        # 1. 感知（模擬）：真值孔位 → 相機量測 + 雜訊
+        # 1. 感知（模擬）：真值孔位 → 相機量測 + 系統偏差 + 逐幀雜訊
         aims = []
         for (g, i, diam, z, y_abs) in holes:
             xf, yu, zr = cfg.field.dist_x, y_abs - cfg.field.launch_h, z
-            d = float(np.linalg.norm([xf, yu, zr])) + rng.normal(0, noise_d)
-            b = np.degrees(np.arctan2(zr, xf)) + rng.normal(0, noise_ang)
-            e = np.degrees(np.arctan2(yu, xf)) + rng.normal(0, noise_ang)
+            bd, bb, be = hole_bias[(g, i)]
+            d = float(np.linalg.norm([xf, yu, zr])) + bd + rng.normal(0, noise_d)
+            b = np.degrees(np.arctan2(zr, xf)) + bb + rng.normal(0, noise_ang)
+            e = np.degrees(np.arctan2(yu, xf)) + be + rng.normal(0, noise_ang)
             aims.append(HoleAim(group=g, idx=i, is_bonus=(g == "bonus"),
                                 is_lit=(g == "bonus" and i == lit_idx),
                                 distance=d, bearing=b, elev=e, source="sim"))
@@ -152,7 +206,7 @@ def run_closed_loop(cfg: Config, rng: np.random.Generator, correct: bool = True,
         report.shots.append(sr)
 
         # 5. 線上校正（用帶雜訊的量測落點）
-        if correct:
+        if correct and learn:
             m_z = e_z + rng.normal(0, cfg.calibration.meas_noise_m)
             m_y = e_y + rng.normal(0, cfg.calibration.meas_noise_m)
             calib.update(hidx, (m_z, m_y))
@@ -164,7 +218,8 @@ def run_closed_loop(cfg: Config, rng: np.random.Generator, correct: bool = True,
 
 
 def run_closed_loop_render(cfg: Config, detector, rng: np.random.Generator,
-                           correct: bool = True, on_shot=None) -> MatchReport:
+                           correct: bool = True, calib: AdaptiveCalibrator | None = None,
+                           on_shot=None) -> MatchReport:
     """render 影像 + 真 YOLO 版閉迴路（P4 強化）。
 
     每球：渲染相機影像 → detector.detect → localize_holes → 決策 → 物理 → 計分 → 校正。
@@ -199,9 +254,7 @@ def run_closed_loop_render(cfg: Config, detector, rng: np.random.Generator,
     t_cl = t_bl - R_cl @ t_bc
     extrinsic = (R_cl, t_cl)
     world = BallisticWorld(cfg, rng)
-    j_pitch, j_yaw = ballistics.estimate_sensitivity(
-        world.shoot, (0.0, cfg.field.grid_cy), cfg)
-    calib = AdaptiveCalibrator(cfg.calibration, j_pitch, j_yaw, n_cells=12)
+    calib = new_calibrator(cfg) if calib is None else calib
     planner = ShotPlanner(cfg)
     arduino = MockArduino()
     report = MatchReport()
@@ -255,12 +308,19 @@ def run_closed_loop_render(cfg: Config, detector, rng: np.random.Generator,
 
 
 def monte_carlo(cfg: Config, n_trials: int = 30, correct: bool = True,
-                seed: int | None = None):
-    """回傳 (每場總分, 每場命中率, 每場加分孔命中率)。"""
+                seed: int | None = None, practice_shots: int = 0, **kw):
+    """回傳 (每場總分, 每場命中率, 每場加分孔命中率)。
+
+    practice_shots>0：每場先跑賽前練習把校正器暖機（warm start）再開賽。
+    其餘關鍵字（noise_*/bias_*/v0_drift_frac）原樣傳給 run_closed_loop。
+    """
     rng = np.random.default_rng(cfg.sim.seed if seed is None else seed)
     pts, hr, bhr = [], [], []
     for _ in range(n_trials):
-        r = run_closed_loop(cfg, rng, correct=correct)
+        calib = (practice_calibration(cfg, rng, practice_shots,
+                                      v0_drift_frac=kw.get("v0_drift_frac", 0.0))
+                 if practice_shots > 0 else None)
+        r = run_closed_loop(cfg, rng, correct=correct, calib=calib, **kw)
         pts.append(r.total_points)
         hr.append(r.hit_rate)
         bhr.append(r.bonus_hit_rate)
