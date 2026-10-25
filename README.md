@@ -16,7 +16,8 @@
 rotbot/
   config.py            # 集中式設定（讀 configs/field.yaml）
   hal.py               # 硬體抽象層：Camera / ActuatorLink 介面
-  perception/          # detector(YOLO) → localize(整板 PnP) → pose；camera(RealCamera / SharedCamera)
+  perception/          # detector(YOLO) → localize(整板 PnP) → pose；camera(make_camera / SharedCamera)
+                       # imx296(機上相機 V4L2 + ISP + 去畸變) / intrinsics(棋盤格內參標定)
   decision/            # ballistics(含阻力瞄準) / calibration(線上校正, 可存檔) / strategy / frames(轉塔運動學)
   actuation/           # protocol(Orin↔MCU 協定 v1) / link(SerialMCU / MockArduino)
   pipeline/            # loop(自主主迴圈 + AutonomousRunner) / state_machine(60 秒自主鎖定)

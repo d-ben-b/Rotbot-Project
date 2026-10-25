@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field as dc_field
 from pathlib import Path
 
 import numpy as np
@@ -96,6 +96,51 @@ class CameraConfig:
 
 
 @dataclass(frozen=True)
+class CameraHardwareConfig:
+    """實體相機的擷取設定。只有實機相機會讀；模擬與合成資料不受影響。"""
+    backend: str = "imx296"      # "imx296"（Jetson CSI）| "webcam"（cv2.VideoCapture）
+    device: str = "/dev/video0"  # webcam 時填裝置編號，如 "0"
+    exposure_us: float = 8333.0  # 曝光時間 (µs)
+    gain_db: float = 0.0         # 類比增益 (dB)
+    wb_r: float = 3.05           # 白平衡增益（相對綠色）
+    wb_b: float = 1.85
+    ccm: bool = True             # 是否套用色彩校正矩陣
+    undistort_interp: str = "nearest"   # 去畸變的內插："nearest"（快）| "linear"（邊緣較平滑）
+
+
+@dataclass(frozen=True)
+class CameraCalibration:
+    """實體相機的標定結果。實機相機用它把影像去畸變，並回報去畸變後影像的針孔內參。
+
+    跟 camera:（模擬/合成資料用的相機模型）分開存：兩者的解析度與視角可以不同。
+    """
+    width: int
+    height: int
+    fx: float                    # 以下四個＋dist：鏡頭原始（含畸變）的內參
+    fy: float
+    cx: float
+    cy: float
+    dist: tuple = ()             # 畸變係數 (k1, k2, p1, p2, k3)
+    out_f: float = 0.0           # 去畸變後輸出影像的焦距（fx=fy，像素）；0 = 沿用 fx
+
+    def __post_init__(self):
+        object.__setattr__(self, "dist", tuple(float(d) for d in self.dist))
+
+    def matrix(self) -> np.ndarray:
+        """鏡頭原始內參 K（搭配 dist 使用）。"""
+        return np.array([[self.fx, 0.0, self.cx],
+                         [0.0, self.fy, self.cy],
+                         [0.0, 0.0, 1.0]], dtype=np.float64)
+
+    def output_matrix(self) -> np.ndarray:
+        """去畸變後影像的針孔內參 K（下游 PnP 用這個）。主點沿用標定的 cx, cy。"""
+        f = self.out_f or self.fx
+        return np.array([[f, 0.0, self.cx],
+                         [0.0, f, self.cy],
+                         [0.0, 0.0, 1.0]], dtype=np.float64)
+
+
+@dataclass(frozen=True)
 class CameraMount:
     """相機相對發射點的外參（camera→launcher）。全 0 = 相機在發射口且對齊。"""
     dx: float       # 右 (m)
@@ -125,6 +170,8 @@ class Config:
     sim: SimConfig
     n_balls: int
     aim: AimConfig = AimConfig()
+    camera_hw: CameraHardwareConfig = dc_field(default_factory=CameraHardwareConfig)
+    camera_calib: CameraCalibration | None = None    # 沒有 = 實機相機尚未標定
 
     @property
     def k_drag(self) -> float:
@@ -182,4 +229,6 @@ def load_config(path: str | Path | None = None) -> Config:
         sim=SimConfig(**raw["sim"]),
         n_balls=int(raw["match"]["n_balls"]),
         aim=AimConfig(**raw.get("aim", {})),
+        camera_hw=CameraHardwareConfig(**raw.get("camera_hw", {})),
+        camera_calib=CameraCalibration(**raw["camera_calib"]) if raw.get("camera_calib") else None,
     )

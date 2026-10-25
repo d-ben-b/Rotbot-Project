@@ -61,6 +61,29 @@ camera:           # 相機內參（範例值：1920x1080、水平 FOV≈69°；�
   width: 1920
   height: 1080
 
+camera_calib:     # 實機相機標定（2026-10-07，IMX296 + 6mm 鏡頭）：兩批共 40 張合併，採用 39 張，RMS 0.71 px，四角畸變 129 px
+                  # 只有實機相機會讀：影像先去畸變，camera.intrinsics() 回傳去畸變後的針孔內參。
+                  # 上面的 camera: 仍是模擬/合成資料用的相機模型，兩者刻意分開（見 PROGRESS 2026-10-07 續 3）。
+                  # 換鏡頭或重新對焦後要重跑 tools/calibrate_camera.py 並覆蓋這段。
+  width: 1456
+  height: 1088
+  fx: 1922.6       # 鏡頭原始內參（含畸變）
+  fy: 1924.0
+  cx: 777.7
+  cy: 578.9
+  dist: [-0.50801, 0.26907, -0.00161, 0.00006, 0.0]   # k1, k2, p1, p2, k3
+  out_f: 1794.1    # 去畸變後影像的焦距（fx=fy）；視角 44.2°×33.7°
+
+camera_hw:        # 實體相機的擷取設定（只有實機會讀；模擬/合成資料不受影響）
+  backend: imx296       # imx296 = Raspberry Pi Global Shutter Camera（Jetson CSI）；webcam = USB 鏡頭
+  device: /dev/video0   # webcam 時填裝置編號（如 "0"）
+  exposure_us: 8333     # 曝光 (µs)，15–15700。8333 在 60Hz 市電燈光下不閃；追高速球要縮到約 250（1/4000s）
+  gain_db: 0.0          # 類比增益 (dB)，0–48。每 +6dB 亮度加倍、雜訊也變多；先開大光圈再加 gain
+  wb_r: 3.05            # 白平衡增益（相對綠色）。預設＝sensor 標定資料 4640K；現場用
+  wb_b: 1.85            #   tools/camera_check.py --auto-wb 對著白紙量一次再覆蓋
+  ccm: true             # 套用色彩校正矩陣：顏色較準（紅色 LED 較飽和），但較慢
+  undistort_interp: nearest   # 去畸變的內插：nearest（約 3 ms）| linear（約 18 ms，邊緣較平滑）
+
 camera_mount:     # 相機相對「發射點」的外參（⚠️ 全 0=相機在發射口且對齊，待實機標定 P5）
   dx: 0.0         # 右 (m)
   dy: 0.0         # 上 (m)，相機高於發射口為正
