@@ -1,28 +1,30 @@
 # Rotbot 軟體進度報告
 
 > AI 自主棒球投手機器人 — 軟體端｜嘻諧們｜2026 TEL 東京威力科創機器人大賽
-> 報告日期：2026-08-14｜負責：軟體（單人）｜比賽日：2026-11-21
+> 報告日期：2026-10-25｜負責：軟體（單人）｜成果報告書：11/7–11/9（通訊硬體之後凍結）｜比賽日：2026-11-21
 
 ---
 
 ## 0. 一句話摘要
 
-已完成**軟體骨架（P0）**與**感知系統（P1）**：從一張相機影像，能用訓練好的 YOLO 模型
-偵測九宮格圓孔、鎖定亮起的加分孔、並算出每個孔相對機器人的**距離與方位角**——
-整條感知鏈在合成環境中端到端跑通、有測試、有視覺 demo。目前無實體硬體，全程以
-**模擬 + 硬體抽象層**開發，硬體到位後可直接抽換底層。
+投球距離改為 **6 m** 後重算全部誤差與假設：舊設計（v0 10 m/s、無阻力瞄準）在 6 m 打不到上排，
+已改為**含阻力瞄準模型 + 飛輪 ≥ 14 m/s 設計點**，模擬成績回到 48.6 分 / 命中 87%（2.5 m 時 52 分）。
+同時補齊硬體到位前的所有軟體：**Orin↔Arduino 協定 + 函式庫 + Uno 韌體**（同一份韌體在電腦上模擬，21/21 測試通過）、
+**路由器區網的網頁手動操控**（鍵盤/搖桿）、**自主主迴圈與比賽主程式**（網頁按開始 → 60 秒 AI → 切手動）。
+整條「看→算→轉→投」已在數位孿生（真韌體 + 合成相機 + 彈道世界）跑完整場；剩下的都是需要實機的驗證。
 
 | 里程碑 | 狀態 | 重點產出 |
 |---|---|---|
 | P0 專案骨架 + 硬體抽象層 | ✅ 完成 | 三層架構、HAL、集中式設定、原型模組化、CI |
-| P1 感知（圓孔偵測 + 定位） | ✅ 完成 | 合成資料、YOLO 訓練、整板 PnP 定位、兩種位姿法比較、視覺 demo |
-| P2 決策（圓孔版） | ✅ 核心完成 | 座標轉換、3D 瞄準反解、加分優先投球策略（+ 測試、P1→P2 串接驗證）|
-| P3 致動 / 通訊 | ⏳ | UART 協定、賽制狀態機、安全停止 |
-| P4 模擬閉迴路 | ✅ 核心完成 | 感知→決策→致動→物理→計分→校正 全鏈跑完整場，校正提升成績 |
-| 互動物理沙盒（PyBullet） | ✅ 核心完成 | 依機器人 CAD/規則建模、真實剛體物理、手動⇄YOLO自動、機器人相機視窗 |
-| P5 硬體整合 / P6 賽前 | ⏳（等硬體） | 相機標定、Orin 部署、實機校正 |
+| P1 感知（圓孔偵測 + 定位） | ✅ 完成 | 合成資料（2.5–7.5 m）、YOLO 重訓、整板 PnP、兩種位姿法 |
+| P2 決策（圓孔版） | ✅ 完成 | 座標轉換、**含阻力瞄準**、轉塔運動學、加分優先策略、校正存檔 |
+| P3 致動 / 通訊 | ✅ 核心完成 | 協定 v1、SerialMCU、Uno 韌體、韌體模擬器、狀態機、看門狗/急停 |
+| P4 模擬閉迴路 / 自主主迴圈 | ✅ 完成 | 蒙地卡羅、render+YOLO 閉迴路、數位孿生整場、比賽主程式 |
+| 手動操控（網頁） | ✅ 完成 | 路由器區網、鍵盤/搖桿、60 秒鎖定、deadman、MJPEG 串流 |
+| 互動物理沙盒（PyBullet） | ✅ 核心完成 | 依 CAD/規則建模、手動⇄YOLO 自動 |
+| P5 硬體整合 / P6 賽前 | ⏳（等硬體） | 步驟與工具已備：docs/hardware_bringup_plan.md |
 
-規模：Python ~2,300 行、26 個自動化測試（全綠）、13 個開發 commit。
+規模：Python ~8,000 行、韌體 C++ ~1,100 行、57 個自動化測試（全綠）。
 
 ---
 
@@ -61,6 +63,18 @@
 - **兩種位姿法** `perception/pose.py`：方法 A（孔中心整板 PnP + 表觀直徑測距）、方法 B（橢圓圓錐反投影，含傾角）。
 - **評估與 demo**：`tools/compare_pose_methods.py`（兩法比較）、`tools/eval_perception.py`（端到端評估）、
   `tools/demo_perception.py`（瞄準 HUD 視覺 demo，產掃描影片）、`sim/perfect_detector.py`（訓練前的閉迴路替身）。
+
+### 6 m 重評估 + P3 + 自主主迴圈 + 手動操控（2026-10-25）
+- **6 m**：`decision/ballistics.DragAimModel`（含阻力數值瞄準）、`tools/reassess_6m.py`（A–F 節一鍵重算）、
+  YOLO 以 2.5–7.5 m 合成資料重訓；結論與硬體規格見 [docs/six_meter_reassessment.md](docs/six_meter_reassessment.md)。
+- **Orin↔MCU**：協定 v1（ASCII + CRC-8 + SEQ 去重）、`actuation/link.SerialMCU`、`firmware/rotbot_mcu`（Uno 韌體）、
+  `firmware/host`（同一份韌體在電腦上跑）、`tools/mcu_link_test.py`；見 [docs/mcu_orin_link.md](docs/mcu_orin_link.md)。
+- **手動操控**：`rotbot/teleop`（aiohttp + WebSocket + MJPEG、鍵盤/搖桿）、`tools/teleop_web.py`；
+  見 [docs/teleop_network.md](docs/teleop_network.md)。
+- **自主主迴圈**：`pipeline/loop.ControlLoop`（掃視→偵測→PnP→轉塔運動學→瞄準→校正→MCU）、`AutonomousRunner`、
+  `sim/twin.py`（數位孿生）、`tools/run_autonomous.py`、**比賽主程式 `tools/robot_main.py`**。
+- **硬體到位省時工具**：`tools/fit_ballistics.py`（打牆擬合 v0/Cd/偏差）、`tools/bench_pipeline.py`（Orin 延遲、TensorRT）、
+  `tools/capture_dataset.py`（實拍 + 預標註）；計畫見 [docs/hardware_bringup_plan.md](docs/hardware_bringup_plan.md)。
 
 ---
 
@@ -105,21 +119,26 @@
 
 ---
 
-## 6. 量化成果（合成環境）
+## 6. 量化成果（模擬 / 合成評估，6 m；2.5 m 時期數字見 §9 歷史條目）
 
-**偵測模型**（yolo11n，驗證集 mAP50）：一般孔 **0.995**、加分孔 0.973、亮起加分孔 0.954。
+**偵測模型**（yolo11n、2000 張 2.5–7.5 m 合成資料重訓）：驗證集 mAP50 一般孔 / 加分孔 / 亮孔 皆 **0.995**（R 0.996）。
+**端到端感知 @ 6 m**（合成影像 60 場）：整板 PnP **60/60**、亮孔 **50/50**、距離誤差中位 **0.2 cm**、方位/俯仰 **0.01°**、孔編號配錯 0。
 
-**兩種位姿法比較**（60 場、注入偵測雜訊）：
+**閉迴路（各 60 場）**：
 
-| 方法 | 距離誤差 | 方位/俯仰 | 傾角 | 適用 |
-|---|---|---|---|---|
-| A-整板 PnP | 0.2–0.5 cm | ~0.06° | ✗ | 主力（需 ≥4 孔）|
-| A-尺寸測距 | ~6 cm 系統性 | — | ✗ | <4 孔備援 |
-| B-橢圓圓錐 | 0–2 cm | ~0.08° | 0.6–1.8° | 補單孔傾角 |
+| 條件 | 總分 | 命中率 | 加分孔 |
+|---|---|---|---|
+| 2.5 m 舊假設（對照） | 52.1 | 93% | 35% |
+| 6 m 沿用舊假設（v0 10、無阻力） | 4.8 | 9% | 0% |
+| **6 m 設計點（v0 14、含阻力、校正 + 賽前練習 9 球）** | **48.6** | **87%** | **30%** |
+| 同上但比賽中凍結校正（沒有落點量測） | 49.0 | 87% | 34% |
+| render 影像 + 真 YOLO（6 場） | 49.3 | 88% | 33% |
 
-**端到端**（真模型，50 場，整板 PnP 用 SQPNP）：整板 PnP 成功 **46/50**、亮孔正確鎖定 **7/7**、
-距離誤差平均 **4.9 cm**（95pct 16.4cm）、方位 **1.20°**、俯仰 0.44°。
-（一般孔容許球心誤差約 ±16.5cm，此精度足以命中；系統性偏差由線上校正吸收。）
+**硬體規格（誤差預算）**：v0 ≥ 14 m/s（10 m/s 只打得到 4/12 孔）；轉塔逐發抖動 ≤ 0.2°（0.4° → 加分孔 30%、0.2° → 48%）；
+v0 逐發抖動 ≤ 0.1 m/s；練習→比賽轉速漂移 < 1%（否則需要比賽中落點量測）。
+
+**系統（數位孿生 = 真韌體 + 合成相機 + 彈道世界）**：整場 27 球全由韌體推出、50 分、1.33 s/球（規則節拍 6.7 s/球）；
+網頁 → MCU 指令 0.6 ms（本機區網）；PC 上感知 + 決策 13.6 ms/幀；韌體 Uno 13.1 KB flash / 667 B RAM。
 
 ---
 
@@ -130,19 +149,27 @@
 | ✅ **亮孔顏色** | **官方 Q33 確認為紅色** LED 燈條（寬約14mm、網框邊緣內約5cm、~475±25lm、有線開關）。（先前暫定綠色）| 已改 `scene.py` 綠→**紅色燈環 + 紅色域隨機化**、`pybullet_world` marker 改紅；**待重生成合成資料 + 重訓 lit 類別** |
 | ✅ 加分規則時窗 | **官方 Q34 確認**：哨響於 3 格**隨機亮 1 格、固定 60 秒後熄滅** → **加分孔只有前 60 秒能得分**。（先前口述「整場一直亮」為誤）| 已於 `ShotPlanner` 建模 60 秒窗口：窗口內優先加分、窗口後不再選加分孔 |
 | 場地間距（孔徑/欄距/列距） | ✅ 已用**官方尺寸標示圖**實值：欄距0.90、列距0.60、加分排0.50（公差±2cm）| 完成 |
-| dist_x / grid_cy / launch_h | 官方孔位圖未標（屬場地擺放+機器人幾何），仍用暫估 | 現場實測 / 依機器人設計確認 |
-| 邊緣被切的孔 | 其 bbox 中心偏差，會拉高 PnP 誤差 | PnP 求解**排除碰到畫面邊緣**的偵測（只顯示不定位）|
-| 精度精修 | 距離平均 8.3cm，主因 bbox 中心≠透視圓心 | 需要更高精度時改用**橢圓中心**（順帶取得傾角）|
-| 合成→真實落差 | 目前全合成、無真實影像 | 硬體到位後用少量實拍微調（P5）|
+| ⚠️ **飛輪 v0** | 6 m 需 ≥ 14 m/s（約 2400 rpm）；舊設計 1700 rpm ≈ 10 m/s 打不到上排 | **硬體組決定馬達/驅動板**；飛輪試驗台量 v0 與逐發抖動 |
+| ⚠️ 轉塔重複精度 | 6 m 加分孔只容許 ±0.6°；抖動 0.4° → 加分孔 30% | 目標 ≤ 0.2°；上桌量（hardware_bringup_plan H3） |
+| dist_x / grid_cy / launch_h | dist_x 定為 6.0；grid_cy 由官方正視圖推為 1.80（假設板底=地面）；launch_h 仍暫估 0.40 | 練習日實測；PnP 本來就逐球量距離 |
+| 相機內參 | 10 月已實拍標定（0.71 px），但數字不在 repo；config 仍是佔位值 | 把 K / 畸變 / 解析度填進 `configs/field.yaml` |
+| 合成→真實落差 | 模型全合成資料 | 現在就用等比例孔板 + 紅 LED 收實拍、預標註、微調（`tools/capture_dataset.py`） |
+| 落點量測 | 線上校正需要；目前只有模擬（孿生）提供 | 轉速穩在 ±1% 時賽前練習暖機即可；比賽中自動判斷當保險 |
+| ⚠️ 無線干擾 | 場館攝影機用 5.1–5.9 GHz、6.5 W；場館無 Wi‑Fi | 練習日測 2.4/5 GHz；**11/9 報告書前**決定是否加 RC 備案（通訊硬體之後凍結） |
+| 邊緣被切的孔 | 2.5 m 隨機視角下偶有孔編號配錯（6 m 不會） | 需要時 PnP 排除碰到畫面邊緣的偵測 |
 
 ---
 
 ## 8. 下一步
 
-1. **P3 致動/通訊**：UART 協定（含 checksum/ack/逾時）、賽制狀態機（前 60 秒自主、安全停止、失效處理）。
-2. **P4 強化**：感知改接「真 YOLO + render 影像」的重版閉迴路；各階段延遲量測（估 Orin 預算）。
-3. **P5 硬體到位**：相機標定、`camera_mount` 外參標定、Orin/TensorRT 部署、實機校正表。
-4. 併行處理 §7 待確認事項（尤其**亮孔顏色**與 **dist_x/grid_cy 實測**）。
+詳細步驟與通過標準：[docs/hardware_bringup_plan.md](docs/hardware_bringup_plan.md)。
+
+1. **本週（不必等整機）**：等比例孔板 + 紅 LED 實拍（驗證 6 m 感知、收微調資料）；相機內參入檔；Orin 環境 + TensorRT 延遲；
+   Arduino 單板燒錄跑 `mcu_link_test --port`；路由器實測 `teleop_web`。
+2. **硬體組決定**：飛輪 ≥ 14 m/s 方案、相機/鏡頭、是否加轉速計/電壓量測/原點開關/急停感測、Wi‑Fi 是否加 RC 備案（11/9 前）。
+3. **上桌**：步進方向/步數比、轉塔重複精度、飛輪 v0 與抖動、供彈 100 球、打牆擬合（`fit_ballistics`）。
+4. **整機**：`run_autonomous --twin`（真轉塔）→ `robot_main`（真相機），60 秒自主彩排、手動彩排。
+5. **練習日**：實拍微調、打牆擬合、存校正暖機檔、參數凍結。
 
 > 完整階段規劃見 [ROADMAP.md](ROADMAP.md)；模組職責與快速試跑見 [README.md](README.md)。
 
@@ -152,6 +179,46 @@
 
 > **append-only**：每次更新只**新增**條目、不改舊條目，保留數字與決策的演進供工作日誌追蹤。
 > 上方 §0–§8 為「最新快照」；本區為「歷史紀錄」。新到舊排列。
+
+### 2026-10-25（6 m 重評估、Orin↔MCU、網頁手動操控、自主主迴圈）
+
+- **環境**：本機預設 Python 3.15 沒有任何套件 → 建 `.venv`（Python 3.12，同 CI）。CUDA：RTX 4050 Laptop、驅動 621.01（CUDA 13.5）、
+  **沒有 CUDA Toolkit 也不需要**——`torch 2.14.1+cu130` wheel 自帶執行環境，`torch.cuda.is_available()` = True。
+  pybullet 在 Windows/Py3.12 無 wheel（需 MSVC）→ 移到 `requirements-sim3d.txt`；新增 `requirements-gpu.txt`。
+  韌體模擬器在 Windows 用 pip 的 `ziglang` 當 C++ 編譯器。
+- **6 m 參數**（`configs/field.yaml`）：`dist_x` 2.50→**6.00**；`grid_cy` 1.50→**1.80**（官方正視圖：中排孔心距板底 180 cm，
+  假設板底=地面）；`v0_model/v0_real` 10/9.6→**14/13.44**（需求值）；新增 `aim` 區（`model: drag`、`cd_model: 0.45`）；
+  `robot.yaml flywheel_rpm` 1700→**2400**。舊 YAML 無 `aim` 區時退回無阻力模型（向下相容，有測試）。
+- **為什麼**：舊假設在 6 m 上排/加分孔打不到；無阻力解差 2.7–3.5°（v0 10 時 8–14°，超過校正上限 ±5°）。
+  新增 `decision/ballistics.DragAimModel`（向量化 RK4 查表，反解 0.02 ms，與真值積分器差 < 0.01 cm、無阻力極限差 1e-4°）。
+- **模擬誠實度修正**：校正靈敏度改用腦內模型估（舊版用真實世界＝偷看答案）；感知誤差拆成「每場每孔系統偏差 + 逐幀雜訊」；
+  新增賽前練習暖機 `practice_calibration`、`AdaptiveCalibrator.save/load`、比賽中凍結校正 `learn=False`。
+- **YOLO 重訓**：2000 張 2.5–7.5 m 合成資料（舊 2.0–3.2 m）、yolo11n、80 epochs、imgsz 960、3.5 h →
+  驗證 mAP50 三類皆 0.995；6 m 端到端 PnP 60/60、亮孔 50/50、距離中位 0.2 cm、方位 0.01°（合成影像）。
+- **6 m 重評估**（`tools/reassess_6m.py`，各 60 場；全文 docs/six_meter_reassessment.md、原始 docs/results/）：
+  校正 OFF 13.6 分/25% → ON 47.3/85% → **ON + 練習 9 球 48.6/87%/加分孔 30%**；2.5 m 舊假設 52.1/93%；
+  6 m 沿用舊假設 4.8/9%。v0 掃描：10 m/s 只打得到 4/12 孔，14 m/s 48.6 分，16 m/s 50.5 分。
+  誤差預算：抖動 0.4°→0.2° 加分孔 30%→48%；v0 抖動 ≤ 0.1 m/s。凍結校正（無落點量測）49.0 分（v0 漂移 1%）；
+  漂移 2%/3% 時凍結 45.6/39.5、線上 48.2/47.8。
+- **Orin↔MCU（P3）**：協定 v1（ASCII + CRC-8/SMBUS、SEQ 去重、NAK 碼、事件）；`SerialMCU`（重送、STAT 輪詢兼心跳、
+  等 BOOT）；`firmware/rotbot_mcu`（梯形速度、飛輪前饋+電壓補償+PI、推球、看門狗、急停、未 ZERO 不准動）；
+  `firmware/host` 韌體模擬器 + `tools/mcu_link_test.py`：**full 21/21、basic 19/19**（RTT 平均 0.25 ms）。
+  arduino-cli 編譯 **Uno：13.1 KB（40%）/ 667 B RAM（32%）**，全感測 15.1 KB / 693 B，我們的檔案 0 警告。
+  過程抓到並修正：pyserial `read(256)` 每次多 50 ms（改先讀 1 byte）、飛輪 PI 起轉 windup 過衝 + READY 閃爍
+  （改 ±5% 內積分 + 到速遲滯）、電池下降 15% 時積分區外卡住（加電壓前饋補償）、轉速計改量週期（2.5%→0.02%）、
+  `config.h` 群組 `#ifndef` 被 `-D` 覆寫時漏定義。
+- **手動操控**：`rotbot/teleop`（aiohttp、WebSocket、MJPEG、鍵盤/搖桿、單一駕駛、60 秒鎖定、300 ms deadman、
+  斷線停機）+ `tools/teleop_web.py`。經本機區網 IP（192.168.1.102）實測：瀏覽器↔伺服器 0.41 ms、指令→MCU ACK 0.61 ms。
+  搖桿需安全連線（Gamepad API）→ SSH 通道開 localhost 或 HTTPS。規則：禁場館外遙控、場館 5.1–5.9 GHz 攝影機干擾。
+- **自主主迴圈**：`pipeline/loop.ControlLoop` + `AutonomousRunner`、`decision/frames` 轉塔運動學（`camera_extrinsic_at`）、
+  `sim/twin.py` 數位孿生、`perception/camera.SharedCamera`；`tools/run_autonomous.py --sim` 整場 27 球、50 分、24/27、
+  1.33 s/球（YOLO 版 1.45 s/球）；**比賽主程式 `tools/robot_main.py`**（網頁開始 → 60 秒 AI → 切手動），整合測試通過。
+- **省時工具**：`tools/fit_ballistics.py`（打牆擬合；自我驗證 2/4/6 m × 27 球 → v0 13.22±0.37（真 13.44）、Cd 0.52±0.11；
+  只打 3/6 m 時 v0 與 Cd 相關 1.00 會飄走 → 加 Cd 先驗 + 三距離）、`tools/bench_pipeline.py`（PC 13.6 ms/幀）、
+  `tools/capture_dataset.py`。CI 新增 Uno 編譯 job。
+- 文件：`docs/six_meter_reassessment.md`、`docs/mcu_orin_link.md`、`docs/teleop_network.md`、`docs/hardware_bringup_plan.md`、
+  `firmware/README.md`；README / ROADMAP / models/README 更新。
+- 測試：37 → **57 passed**。
 
 ### 2026-09-09（追趕補記：8/19 之後的變更）
 
