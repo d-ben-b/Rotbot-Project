@@ -46,6 +46,7 @@ class LaunchConfig:
     v0_model: float
     v0_real: float
     v0_jitter: float
+    rpm_model: float = 2400.0    # v0_model 對應的飛輪轉速；其他轉速按比例換算 v0（手動操控的預估落點用）
 
 
 @dataclass(frozen=True)

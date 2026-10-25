@@ -22,6 +22,13 @@ def make_camera(cfg: Config) -> Camera:
     raise ValueError(f"未知的 camera_hw.backend: {hw.backend!r}（可用：imx296 / webcam）")
 
 
+def open_camera(spec: str, cfg: Config) -> Camera:
+    """工具的 --camera 參數：cfg = 依 field.yaml 的 camera_hw（目前 IMX296）；數字 = USB 相機；含 '!' = GStreamer 管線。"""
+    if spec == "cfg":
+        return make_camera(cfg)
+    return RealCamera(cfg.camera, device=int(spec) if spec.isdigit() else spec)
+
+
 class RealCamera(Camera):
     """真實相機（cv2.VideoCapture）。P5 硬體到位後接上並以標定內參覆蓋。
 
