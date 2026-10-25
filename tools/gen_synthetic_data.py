@@ -70,10 +70,13 @@ def _annotate(sample: SceneSample) -> np.ndarray:
 
 def generate_dataset(cfg: Config, n: int, out_dir: str | Path,
                      val_split: float = 0.2, seed: int = 0,
-                     n_preview: int = 8) -> Path:
+                     n_preview: int = 8,
+                     dist_range: tuple[float, float] | None = None) -> Path:
+    """dist_range：隨機視角距離範圍 (m)；省略用 SceneGenerator 預設（dist_x 附近）。"""
     out = Path(out_dir)
     W, H = cfg.camera.width, cfg.camera.height
-    gen = SceneGenerator(cfg, rng=np.random.default_rng(seed), randomize=True)
+    gen = SceneGenerator(cfg, rng=np.random.default_rng(seed), randomize=True,
+                         dist_range=dist_range)
 
     for split in ("train", "val"):
         (out / "images" / split).mkdir(parents=True, exist_ok=True)
@@ -114,10 +117,14 @@ def main() -> None:
     ap.add_argument("--val-split", type=float, default=0.2)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--n-preview", type=int, default=8)
+    ap.add_argument("--dist-min", type=float, default=2.5,
+                    help="隨機視角最近距離 (m)；預設涵蓋機器人作業區 2.5~7.5m")
+    ap.add_argument("--dist-max", type=float, default=7.5)
     args = ap.parse_args()
 
     cfg = load_config()
-    out = generate_dataset(cfg, args.n, args.out, args.val_split, args.seed, args.n_preview)
+    out = generate_dataset(cfg, args.n, args.out, args.val_split, args.seed, args.n_preview,
+                           dist_range=(args.dist_min, args.dist_max))
     n_val = int(args.n * args.val_split)
     print(f"完成：{args.n} 張（train {args.n - n_val} / val {n_val}）→ {out.resolve()}")
     print(f"訓練指令：yolo detect train data={out.as_posix()}/dataset.yaml "

@@ -48,18 +48,22 @@ def main() -> None:
     ap.add_argument("--batch", type=float, default=-1, help="-1 = 自動")
     ap.add_argument("--device", default="0", help="'0'=第一張 GPU，'cpu'=CPU")
     ap.add_argument("--workers", type=int, default=2, help="dataloader worker 數（RAM 吃緊調低）")
+    ap.add_argument("--name", default="grid_holes", help="runs/detect/<name> 輸出資料夾名")
+    ap.add_argument("--dist-min", type=float, default=2.5, help="--gen 時視角最近距離 (m)")
+    ap.add_argument("--dist-max", type=float, default=7.5, help="--gen 時視角最遠距離 (m)")
     args = ap.parse_args()
 
     if args.gen:
         from rotbot.config import load_config
         from tools.gen_synthetic_data import generate_dataset
-        out = generate_dataset(load_config(), args.n, Path(args.data).parent, seed=0)
+        out = generate_dataset(load_config(), args.n, Path(args.data).parent, seed=0,
+                               dist_range=(args.dist_min, args.dist_max))
         print(f"資料集已產生：{out.resolve()}")
 
     batch = int(args.batch) if args.batch >= 1 else args.batch
     results = train(args.data, model=args.model, epochs=args.epochs,
                     imgsz=args.imgsz, batch=batch, device=args.device,
-                    workers=args.workers)
+                    name=args.name, workers=args.workers)
     save_dir = getattr(results, "save_dir", None)
     print("訓練完成。輸出：", save_dir or "runs/detect/…")
 

@@ -71,11 +71,15 @@ class SceneGenerator:
     """隨機視角 + 域隨機化的圓孔九宮格合成器。"""
 
     def __init__(self, cfg: Config, rng: np.random.Generator | None = None,
-                 randomize: bool = True, rim_jitter: bool = True):
+                 randomize: bool = True, rim_jitter: bool = True,
+                 dist_range: tuple[float, float] | None = None):
         self.cfg = cfg
         self.rng = rng if rng is not None else np.random.default_rng(cfg.sim.seed)
         self.randomize = randomize
         self.rim_jitter = rim_jitter        # False = 中性灰邊緣（demo 用，避免顏色混淆）
+        # 隨機視角的距離範圍 (m)；省略時取 dist_x×(0.8, 1.28)（2.5m 時即舊版 2.0~3.2m）
+        d = cfg.field.dist_x
+        self.dist_range = tuple(dist_range) if dist_range is not None else (0.8 * d, 1.28 * d)
         self.K = cfg.camera.matrix()
         self.W, self.H = cfg.camera.width, cfg.camera.height
         self._holes_board = cfg.hole_centers()   # [(group, idx, diameter, center_board)]
@@ -87,7 +91,7 @@ class SceneGenerator:
             return dict(distance=self.cfg.field.dist_x, bearing=0.0, elev=0.0,
                         board_yaw=0.0, board_pitch=0.0, roll=0.0)
         return dict(
-            distance=float(r.uniform(2.0, 3.2)),
+            distance=float(r.uniform(*self.dist_range)),
             bearing=float(r.uniform(-18, 18)),
             elev=float(r.uniform(-6, 12)),
             board_yaw=float(r.uniform(-22, 22)),
@@ -213,6 +217,17 @@ class SceneGenerator:
         """
         vp = self._random_viewpoint() if vp is None else dict(vp)
         R, t = self._board_pose(vp)
+        return self._render_pose(R, t, vp, lit_bonus)
+
+    def sample_pose(self, R: np.ndarray, t: np.ndarray,
+                    lit_bonus: int | str | None = "random") -> SceneSample:
+        """以給定板位姿（board→cam 的 R, t）產生樣本。
+
+        數位孿生用：相機姿態由轉塔實際角度算出（見 sim/twin.py），影像與幾何完全一致。
+        """
+        return self._render_pose(np.asarray(R, float), np.asarray(t, float).ravel(), {}, lit_bonus)
+
+    def _render_pose(self, R, t, vp: dict, lit_bonus) -> SceneSample:
         holes = [self._make_hole(g, i, d, C, R, t) for (g, i, d, C) in self._holes_board]
 
         bonus = [h for h in holes if h.is_bonus]

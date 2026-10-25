@@ -15,7 +15,7 @@ chassis:                 # 車體（四輪雙馬達差速；投球時視為定�
 launcher:                # 雙飛輪對夾摩擦投射
   type: dual_flywheel
   flywheel_diameter: 0.12   # (m) 文件明列（r=0.06）
-  flywheel_rpm: 1700        # 實設轉速（補球體擠壓/打滑；理論 1592）
+  flywheel_rpm: 2400        # 6m 設計點：v0≈14 m/s → 理論 2228rpm，+7% 補擠壓/打滑（舊 1700rpm≈10 m/s 在 6m 打不到上排）
   muzzle_height: 0.40       # 發射口離地 (m) = field.launch_h；待實測
   pivot_forward: 0.0        # 轉塔樞軸相對底盤中心的前移 (m)
 

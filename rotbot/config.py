@@ -56,6 +56,14 @@ class AirConfig:
 
 
 @dataclass(frozen=True)
+class AimConfig:
+    """腦內瞄準模型。drag=含平方阻力數值解；vacuum=無阻力解析解（舊版）。"""
+    model: str = "vacuum"
+    cd_model: float = 0.50   # 腦內模型認定的阻力係數（實機以試投擬合）
+    dt: float = 0.002        # 數值積分步長 (s)
+
+
+@dataclass(frozen=True)
 class MechanismConfig:
     bias_pitch: float
     bias_yaw: float
@@ -116,11 +124,17 @@ class Config:
     camera_mount: CameraMount
     sim: SimConfig
     n_balls: int
+    aim: AimConfig = AimConfig()
 
     @property
     def k_drag(self) -> float:
         """平方阻力係數：F_drag = k_drag * |v| * v。"""
         return 0.5 * self.air.rho * self.air.cd * self.ball.area
+
+    @property
+    def k_drag_model(self) -> float:
+        """腦內模型認定的平方阻力係數（用 aim.cd_model）。"""
+        return 0.5 * self.air.rho * self.aim.cd_model * self.ball.area
 
     @property
     def tol_std(self) -> float:
@@ -167,4 +181,5 @@ def load_config(path: str | Path | None = None) -> Config:
         camera_mount=CameraMount(**raw["camera_mount"]),
         sim=SimConfig(**raw["sim"]),
         n_balls=int(raw["match"]["n_balls"]),
+        aim=AimConfig(**raw.get("aim", {})),
     )
