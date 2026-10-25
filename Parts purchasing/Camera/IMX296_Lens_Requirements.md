@@ -1,5 +1,8 @@
 # IMX296（Raspberry Pi Global Shutter Camera）鏡頭需求規格
 
+> **2026-10-25 更新：不需要再買短焦鏡頭。** 投球距離改為 6 m，現在的 6 mm 鏡頭在 6 m 能看到全部 12 個孔
+> （掃視姿態四邊還留 ≥ 218 px）。下面「建議改 3.5–4 mm」是 2.5 m 時的結論，保留作紀錄。
+
 > 2026-10-07 改寫。前一版是照 e-CAM25_CUONX（AR0234、M12 鏡頭座）寫的；實際採用的相機換成
 > Raspberry Pi Global Shutter Camera，sensor、像素尺寸、鏡頭座都不同，所以整份重算。
 > 舊版內容在 git 歷史裡（檔名 `e-CAM25_CUONX_Lens_Requirements.md`）。

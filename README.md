@@ -6,6 +6,8 @@
 以 `hal` 抽象層隔離真硬體與 `sim` 模擬 —— 硬體到位前先在模擬裡跑通整條閉迴路，
 硬體到了只換底層實作，主邏輯不動。
 
+> **先看這兩份**：[我要做什麼（燒錄、接線、量球速…）](docs/00_todo.md)、[怎麼確認軟體是對的](docs/00_verify.md)。
+>
 > 進度與數字見 [PROGRESS.md](PROGRESS.md)；規劃見 [ROADMAP.md](ROADMAP.md)。
 > 2026-10-25 起投球距離 **6 m**：[docs/six_meter_reassessment.md](docs/six_meter_reassessment.md)；
 > 硬體到位前後的驗證計畫：[docs/hardware_bringup_plan.md](docs/hardware_bringup_plan.md)。
@@ -21,13 +23,13 @@ rotbot/
   decision/            # ballistics(含阻力瞄準) / calibration(線上校正, 可存檔) / strategy / frames(轉塔運動學)
   actuation/           # protocol(Orin↔MCU 協定 v1) / link(SerialMCU / MockArduino)
   pipeline/            # loop(自主主迴圈 + AutonomousRunner) / state_machine(60 秒自主鎖定)
-  teleop/              # 手動操控 Web 伺服器 + 控制頁（鍵盤 / 搖桿）
+  teleop/              # 手動操控 Web 伺服器 + 控制頁（鍵盤 / 搖桿）+ aim_preview(預估落點)
   sim/                 # world(真實物理) / scene(合成影像) / closed_loop / twin(數位孿生) / pybullet_*
 firmware/rotbot_mcu/   # Arduino Uno 韌體（同一份原始碼也在電腦上跑成模擬器：firmware/host）
 configs/               # field.yaml（場地/球/機構/校正）、robot.yaml（機器人幾何）
 tools/                 # 各種可直接執行的工具（見下）
-docs/                  # 6 m 評估、MCU 連線、網路操控、硬體驗證計畫
-tests/                 # pytest（57 項）
+docs/                  # 00_todo / 00_verify（先看）、6 m 評估、MCU 連線、網路操控、相機（imx296_jetson）
+tests/                 # pytest（80 項 + 2 項只在 Linux / 實體相機跑）
 ```
 
 ## 安裝
@@ -46,15 +48,16 @@ pytest -q
 
 | 指令 | 用途 |
 |---|---|
-| `python -m tools.robot_main --sim` | **比賽主程式**（網頁按開始 → 60 秒 AI 自主 → 可切手動）；`--sim` = 韌體模擬器 + 數位孿生 |
+| `python -m tools.robot_main --sim` | **比賽主程式**（網頁按開始 → 60 秒 AI 自主 → 可切手動；畫面標出預估落點）；`--sim` = 韌體模擬器 + 數位孿生；Jetson 上 `--mcu /dev/ttyACM0`（相機自動用 IMX296） |
 | `python -m tools.run_autonomous --sim` | 自主主迴圈跑一整場並印逐球明細 |
 | `python -m tools.teleop_web --mcu sil --camera sim` | 手動操控網頁（路由器區網 / 鍵盤 / 搖桿） |
 | `python -m tools.mcu_link_test --sil` | Orin↔MCU 連線驗證（`--port COM5` / `/dev/ttyACM0` 打實機） |
 | `python -m tools.mcu_sil` | 建置並執行韌體模擬器（`socket://127.0.0.1:5760`） |
 | `python -m tools.reassess_6m` | 6 m 全部誤差與假設重算（模擬/合成） |
 | `python -m tools.fit_ballistics shots.csv` | 打牆資料擬合 v0 / Cd / 安裝偏差 |
-| `python -m tools.bench_pipeline` | 感知+決策延遲（Orin 上加 `--export-trt`） |
-| `python -m tools.capture_dataset --camera 0 --prelabel models/grid_holes_yolo11n.pt --out …` | 實拍收集 + 預標註（微調用） |
+| `python -m tools.bench_pipeline` | 感知+決策延遲 + 量到的距離（Orin 上加 `--camera cfg`、`--export-trt`） |
+| `python -m tools.capture_dataset --prelabel models/grid_holes_yolo11n.pt --out …` | 實拍收集 + 預標註（微調用） |
+| `python3 -m tools.camera_check` / `calibrate_camera` | Jetson：IMX296 取像檢查 / 重新標定內參（見 docs/imx296_jetson.md） |
 | `python -m tools.train_detector` / `eval_perception` | 訓練 / 評估 YOLO |
 | `python -m tools.run_match --trials 50` | 閉迴路蒙地卡羅（真值+誤差感知，快） |
 

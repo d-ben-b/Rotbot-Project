@@ -116,7 +116,7 @@ STAT 旗標：0x01 READY、0x02 MOVING、0x04 FLY_OK、0x08 FIRING、0x10 ESTOP�
 | L3 | Arduino + 驅動板 + 馬達（桌上，無機構） | `--port COM5 --allow-motion` | 步進方向/步數比、飛輪起轉、轉速計/電壓讀值、推球、看門狗 |
 | L4 | Arduino 改接 Orin | `--port /dev/ttyACM0 --allow-motion` | Orin 上的權限、延遲（同 L2/L3 標準） |
 | L5 | 加上機構 | `python -m tools.run_autonomous --mcu /dev/ttyACM0 --twin` | 轉塔真的動、影像與計分先用數位孿生（還沒裝發射機構也能跑） |
-| L6 | 整機 | `python -m tools.run_autonomous --mcu /dev/ttyACM0 --camera 0` | 真相機 + YOLO + 真投球 |
+| L6 | 整機 | `python -m tools.run_autonomous --mcu /dev/ttyACM0`（相機預設用 IMX296） | 真相機 + YOLO + 真投球 |
 
 燒錄：Arduino IDE 開 `firmware/rotbot_mcu/rotbot_mcu.ino` 上傳；或
 `arduino-cli compile --upload -p COM5 --fqbn arduino:avr:uno firmware/rotbot_mcu`。
