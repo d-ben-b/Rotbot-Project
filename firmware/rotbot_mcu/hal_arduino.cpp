@@ -78,7 +78,7 @@ float ArduinoHal::batteryVolts() {
 #if VBAT_ENABLED
   uint32_t now = ::millis();
   if (vbat_ < 0 || now - vbat_t_ >= 20) {      // analogRead ~110us，每 20ms 讀一次 + 一階低通
-    float v = analogRead(PIN_VBAT) * (5.0f / 1023.0f) * VBAT_DIVIDER;
+    float v = analogRead(PIN_VBAT) * (VBAT_ADC_VREF / 1023.0f) * VBAT_DIVIDER;   // analogRead 預設 10 bit（Uno 與 STM32duino 相同）
     vbat_ = vbat_ < 0 ? v : vbat_ + 0.1f * (v - vbat_);
     vbat_t_ = now;
   }

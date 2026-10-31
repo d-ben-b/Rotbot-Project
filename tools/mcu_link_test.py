@@ -84,6 +84,8 @@ class Suite:
     def t_boot(self):
         if self.link.booted:
             return "PASS", "收到 EV BOOT（開埠重置 → 開機）"
+        if not self.link.resets_on_open:
+            return "SKIP", "ST-LINK 序列埠開埠不會重置 MCU（Nucleo 正常）；要看開機訊息按板上黑色 RESET"
         return "WARN", "沒收到 EV BOOT（板子開埠不重置；不影響通訊）"
 
     def t_ping(self):

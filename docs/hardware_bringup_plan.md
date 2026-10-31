@@ -9,7 +9,7 @@
 |---|---|
 | 比賽主程式 `tools/robot_main.py`：網頁按「開始」→ 前 60 秒 AI 自主投球 → 切手動接手 | `tests/test_robot_main.py`：AI 經真韌體推出球、交接後不再發射、手動 JOG 生效 |
 | 自主主迴圈 `rotbot/pipeline/loop.py`：掃視 → YOLO → PnP → 轉塔運動學 → 含阻力瞄準 → 校正 → MCU | `tools/run_autonomous.py --sim`：27 球全由韌體推出、50 分、1.33 s/球 |
-| Orin↔Arduino 協定 + 函式庫 + 韌體（Uno 可編譯） | `tools/mcu_link_test.py --sil` 21/21 |
+| Orin↔MCU 協定 + 函式庫 + 韌體（NUCLEO-G474RE 可編譯） | `tools/mcu_link_test.py --sil` 21/21 |
 | 手動操控網頁（路由器區網、鍵盤/搖桿） | 經區網 IP 實測 0.4–0.6 ms |
 | 6 m 瞄準模型、YOLO（2.5–7.5 m 合成資料） | `tools/reassess_6m.py` |
 | 試投擬合（v0 / Cd / 安裝偏差）、校正存檔 | `tools/fit_ballistics.py --synthetic`、`tests/test_fit_ballistics.py` |

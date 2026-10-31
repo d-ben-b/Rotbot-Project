@@ -9,7 +9,7 @@
 
 投球距離改為 **6 m** 後重算全部誤差與假設：舊設計（v0 10 m/s、無阻力瞄準）在 6 m 打不到上排，
 已改為**含阻力瞄準模型 + 飛輪 ≥ 14 m/s 設計點**，模擬成績回到 48.6 分 / 命中 87%（2.5 m 時 52 分）。
-同時補齊硬體到位前的所有軟體：**Orin↔Arduino 協定 + 函式庫 + Uno 韌體**（同一份韌體在電腦上模擬，21/21 測試通過）、
+同時補齊硬體到位前的所有軟體：**Orin↔MCU 協定 + 函式庫 + 韌體**（MCU 是 NUCLEO-G474RE，用 STM32duino 編譯；同一份韌體在電腦上模擬，21/21 測試通過）、
 **路由器區網的網頁手動操控**（鍵盤/搖桿）、**自主主迴圈與比賽主程式**（網頁按開始 → 60 秒 AI → 切手動）。
 整條「看→算→轉→投」已在數位孿生（真韌體 + 合成相機 + 彈道世界）跑完整場；剩下的都是需要實機的驗證。
 **相機定案**（IMX296 + 6 mm，10/07 實機標定）已入檔並用它重跑：6 m 時整面網框入鏡，YOLO 不用重訓（模擬/合成評估）。
@@ -21,13 +21,13 @@
 | P0 專案骨架 + 硬體抽象層 | ✅ 完成 | 三層架構、HAL、集中式設定、原型模組化、CI |
 | P1 感知（圓孔偵測 + 定位） | ✅ 完成 | 合成資料（2.5–7.5 m）、YOLO 重訓、整板 PnP、兩種位姿法 |
 | P2 決策（圓孔版） | ✅ 完成 | 座標轉換、**含阻力瞄準**、轉塔運動學、加分優先策略、校正存檔 |
-| P3 致動 / 通訊 | ✅ 核心完成 | 協定 v1、SerialMCU、Uno 韌體、韌體模擬器、狀態機、看門狗/急停 |
+| P3 致動 / 通訊 | ✅ 核心完成 | 協定 v1、SerialMCU、NUCLEO-G474RE 韌體（STM32duino）、韌體模擬器、狀態機、看門狗/急停 |
 | P4 模擬閉迴路 / 自主主迴圈 | ✅ 完成 | 蒙地卡羅、render+YOLO 閉迴路、數位孿生整場、比賽主程式 |
 | 手動操控（網頁） | ✅ 完成 | 路由器區網、鍵盤/搖桿、60 秒鎖定、deadman、MJPEG 串流、**預估落點 + 網板小地圖** |
 | 互動物理沙盒（PyBullet） | ✅ 核心完成 | 依 CAD/規則建模、手動⇄YOLO 自動 |
 | P5 硬體整合 / P6 賽前 | ▶ 進行中 | 相機已到位並標定（IMX296 + 6 mm）；其餘等硬體，步驟見 docs/00_todo.md |
 
-規模：Python ~11,700 行（git 追蹤的 .py，含測試/工具/原型）、韌體 C++ ~1,100 行、80 個自動化測試（全綠，另 2 項只在 Linux / 實體相機跑）。
+規模：Python ~11,700 行（git 追蹤的 .py，含測試/工具/原型）、韌體 C++ ~1,100 行、81 個自動化測試（全綠，另 2 項只在 Linux / 實體相機跑）。
 
 ---
 
@@ -153,7 +153,7 @@ PnP 46/60、孔編號配錯 7/571（舊 69° 佔位相機 60/60、0/707）——
 v0 逐發抖動 ≤ 0.1 m/s；練習→比賽轉速漂移 < 1%（否則需要比賽中落點量測）。
 
 **系統（數位孿生 = 真韌體 + 合成相機 + 彈道世界）**：整場 27 球全由韌體推出、50 分、1.33 s/球（規則節拍 6.7 s/球；實機相機版 1.28 s/球、YOLO 1.40 s/球，都是 50 分）；
-網頁 → MCU 指令 0.6 ms（本機區網）；PC 上感知 + 決策 13.6 ms/幀；韌體 Uno 13.1 KB flash / 667 B RAM。
+網頁 → MCU 指令 0.6 ms（本機區網）；PC 上感知 + 決策 13.6 ms/幀；韌體 NUCLEO-G474RE 33.3 KB flash（6%）/ 1.8 KB RAM（1%）。
 
 ---
 
@@ -183,7 +183,7 @@ v0 逐發抖動 ≤ 0.1 m/s；練習→比賽轉速漂移 < 1%（否則需要比
 照順序做的清單：[docs/00_todo.md](docs/00_todo.md)；怎麼確認：[docs/00_verify.md](docs/00_verify.md)；
 完整步驟與通過標準：[docs/hardware_bringup_plan.md](docs/hardware_bringup_plan.md)。
 
-1. **本週（不必等整機）**：Arduino 燒錄跑 `mcu_link_test --port`；等比例孔板 + 紅 LED 實拍（`bench_pipeline --camera cfg` 量距離、收微調資料）；
+1. **本週（不必等整機）**：Nucleo 燒錄跑 `mcu_link_test --port`；等比例孔板 + 紅 LED 實拍（`bench_pipeline --camera cfg` 量距離、收微調資料）；
    Jetson 環境（ultralytics / PyTorch、權重）+ TensorRT 延遲；路由器實測網頁操控。
 2. **硬體組決定**：飛輪 ≥ 14 m/s 方案、是否加轉速計/電壓量測/原點開關/急停感測、Wi‑Fi 是否加 RC 備案（11/9 前）；
    給數字：`launch_h`、`camera_mount`、步數比、投球時機器人左右位置。
@@ -199,6 +199,31 @@ v0 逐發抖動 ≤ 0.1 m/s；練習→比賽轉速漂移 < 1%（否則需要比
 
 > **append-only**：每次更新只**新增**條目、不改舊條目，保留數字與決策的演進供工作日誌追蹤。
 > 上方 §0–§8 為「最新快照」；本區為「歷史紀錄」。新到舊排列。
+
+### 2026-10-31：MCU 改為 NUCLEO-G474RE（韌體以 STM32duino 編譯）
+
+- **起因**：使用者指出 MCU 是 NUCLEO-G474RE（STM32G474RE），附 ST 使用手冊 UM2505（`data/` 下，不入庫）。
+  10/25 的韌體與文件以 Arduino Uno 為目標，依據是 repo 既有的 `MockArduino` / `SerialArduino` 命名，這個假設是錯的。
+- **韌體不用改寫**：程式用 Arduino API，以 ST 官方 STM32duino 核心 3.0.0 編譯（FQBN `STMicroelectronics:stm32:Nucleo_64:pnum=NUCLEO_G474RE`）。
+  - 出廠設定 33,312 B flash（6%）/ 1,828 B RAM（1%）；全感測 40,264 B（7%）/ 1,852 B（1%）；我們的檔案 0 警告。
+  - 同一份程式仍可編 Uno：13,124 B / 667 B。
+  - 對照 UM2505 表 15 與 STM32duino 的 variant：Arduino 排針 D2–D13 / A0–A3 對到的 STM32 腳位寫進 `config.h` 註解。
+    `Serial` = LPUART1（PA2/PA3）= 板上 ST-LINK 的虛擬序列埠。
+- **改動**：
+  - 電池量測的 ADC 參考改成 `VBAT_ADC_VREF`（Nucleo 預設 3.3 V，Uno 5 V）。
+    手冊沒有標出出廠的 VREF+ 是 2.5 V 還是 3.25 V（JP8 / SB14），要量 CN5 第 8 腳後填入。
+  - `VBAT_DIVIDER` 預設改 5.7（47k/10k，12.6 V → 2.2 V）。
+  - `SerialMCU`：ST-LINK（USB VID 0x0483）開埠不會重置 MCU，不再白等 3 s 的 `EV BOOT`（新函式 `resets_on_open`）。
+    `mcu_link_test` 的開機事件在這種板子上回 SKIP。
+  - CI 的韌體 job 改編 G474RE（GitHub Actions 上未驗證：repo 是 private，讀不到結果）。
+- **文件**：
+  - `docs/00_todo.md` 第 1、2 步改成 Nucleo：Arduino IDE 加 STM32duino、選 Nucleo-64 / Nucleo G474RE、Mass Storage 上傳、按 RESET 看開機訊息。
+  - 接線表加 STM32 腳位與 3.3 V 注意事項：TMC2209 VIO 3.3 V、MS1/MS2 接高 = 16 微步、分壓、不可直接接 5 V。
+  - Jetson 準備加上 `dialout` 群組與不要升級 numpy。
+  - `00_verify.md` C 節、`mcu_orin_link.md`（頂端更新說明、腳位表）、`firmware/README.md`、README 同步。
+- **另外驗證**：在這台電腦重現 Jetson 的 Python 3.10 + numpy 1.21（OpenCV 4.7 代替 JetPack 的 4.8），完整測試 80 passed、2 skipped。
+- **環境**：Windows Smart App Control 約在 10/31 擋下 `.venv` 的 python.exe 與本機編譯的模擬器（WinError 4551）；使用者關閉後恢復。
+- 測試：新增 `test_resets_on_open_by_usb_vendor`；全套 **81 passed、2 skipped**。
 
 ### 2026-10-25（續）：相機定案入檔、手動操控的預估落點、兩份入口文件
 

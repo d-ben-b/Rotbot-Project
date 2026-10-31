@@ -1,4 +1,4 @@
-// Arduino（Uno）硬體實作：TMC2209 STEP/DIR、PWM 馬達、轉速計、急停感測、USB 序列。
+// Arduino API 硬體實作（NUCLEO-G474RE 用 STM32duino；也可編 Uno）：TMC2209 STEP/DIR、PWM 馬達、轉速計、急停感測、USB 序列。
 #pragma once
 #ifdef ARDUINO
 #include <Arduino.h>

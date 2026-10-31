@@ -1,49 +1,51 @@
 // 韌體設定（腳位 / 機構 / 時序）——硬體確定後只改這裡。
 // 每一項各自用 #ifndef 包起來：可用 -D 單獨覆寫（電腦模擬器 firmware/host、arduino-cli 編譯參數）。
+// 目標板：NUCLEO-G474RE（STM32G474RE，STM32duino 核心）。用板上的 Arduino Uno 排針 D0–D15 / A0–A5，
+// 括號內是對應的 STM32 腳位（UM2505 表 15）。I/O 是 3.3 V。同一份程式也能編 Arduino Uno。
 #pragma once
 
-// ===== 腳位：Arduino Uno 建議配置（依實際接線修改）=====
+// ===== 腳位（依實際接線修改）=====
 #ifndef PIN_YAW_STEP
-#define PIN_YAW_STEP 4        // TMC2209 STEP（水平/迴轉）
+#define PIN_YAW_STEP 4        // D4 (PB5)  TMC2209 STEP（水平/迴轉）
 #endif
 #ifndef PIN_YAW_DIR
-#define PIN_YAW_DIR 7
+#define PIN_YAW_DIR 7         // D7 (PA8)
 #endif
 #ifndef PIN_PITCH_STEP
-#define PIN_PITCH_STEP 8      // TMC2209 STEP（俯仰）
+#define PIN_PITCH_STEP 8      // D8 (PA9)  TMC2209 STEP（俯仰）
 #endif
 #ifndef PIN_PITCH_DIR
-#define PIN_PITCH_DIR 12
+#define PIN_PITCH_DIR 12      // D12 (PA6)
 #endif
 #ifndef PIN_STEPPER_EN
-#define PIN_STEPPER_EN A3     // TMC2209 EN，兩軸共用，LOW = 致能
+#define PIN_STEPPER_EN A3     // A3 (PB0)  TMC2209 EN，兩軸共用，LOW = 致能
 #endif
 #ifndef PIN_FLY_L
-#define PIN_FLY_L 5           // 飛輪左 PWM（驅動板 IN1；IN2 接 GND）
+#define PIN_FLY_L 5           // D5 (PB4, TIM3_CH1)  飛輪左 PWM（驅動板 IN1；IN2 接 GND）
 #endif
 #ifndef PIN_FLY_R
-#define PIN_FLY_R 6           // 飛輪右 PWM
+#define PIN_FLY_R 6           // D6 (PB10, TIM2_CH3) 飛輪右 PWM
 #endif
 #ifndef PIN_FEED
-#define PIN_FEED 9            // 推球（曲柄滑塊）馬達 PWM
+#define PIN_FEED 9            // D9 (PC7, TIM3_CH2)  推球（曲柄滑塊）馬達 PWM
 #endif
 #ifndef PIN_FEED_HOME
-#define PIN_FEED_HOME A0      // 推球原點開關（INPUT_PULLUP，LOW = 在原點）
+#define PIN_FEED_HOME A0      // A0 (PA0)  推球原點開關（INPUT_PULLUP，LOW = 在原點）
 #endif
 #ifndef PIN_ESTOP_SENSE
-#define PIN_ESTOP_SENSE A1    // 急停輔助接點（INPUT_PULLUP，HIGH = 已按下 / 斷線）
+#define PIN_ESTOP_SENSE A1    // A1 (PA1)  急停輔助接點（INPUT_PULLUP，HIGH = 已按下 / 斷線）
 #endif
 #ifndef PIN_VBAT
-#define PIN_VBAT A2           // 飛輪電池電壓（分壓後接入，選用）
+#define PIN_VBAT A2           // A2 (PA4)  飛輪電池電壓（分壓後接入，選用；不可超過 VBAT_ADC_VREF）
 #endif
 #ifndef PIN_TACH_L
-#define PIN_TACH_L 2          // 飛輪轉速計（INT0，選用）
+#define PIN_TACH_L 2          // D2 (PA10) 飛輪轉速計（外部中斷，選用）
 #endif
 #ifndef PIN_TACH_R
-#define PIN_TACH_R 3          // 飛輪轉速計（INT1，選用）
+#define PIN_TACH_R 3          // D3 (PB3)  飛輪轉速計（外部中斷，選用）
 #endif
 #ifndef PIN_LED
-#define PIN_LED 13
+#define PIN_LED 13            // D13 (PA5) = 板上綠色 LED LD2
 #endif
 
 // ===== 機構（⚠️ 皆為估計值，待硬體組確認）=====
@@ -98,7 +100,15 @@
 #define VBAT_ENABLED 0               // 1 = 量飛輪電池電壓 → 前饋電壓補償（3S 鋰電滿→空差 ~17%，6m 必要）
 #endif
 #ifndef VBAT_DIVIDER
-#define VBAT_DIVIDER 3.0f            // 分壓比（例：20k/10k → 12.6V 變 4.2V）
+#define VBAT_DIVIDER 5.7f            // 分壓比 (R1+R2)/R2（例：47k/10k → 3S 滿電 12.6V 變 2.21V，低於 ADC 參考電壓）
+#endif
+#ifndef VBAT_ADC_VREF
+#if defined(ARDUINO_ARCH_AVR)
+#define VBAT_ADC_VREF 5.0f           // Uno：ADC 參考 = 5 V
+#else
+#define VBAT_ADC_VREF 3.3f           // NUCLEO-G474RE：ADC 參考 = VREF+。JP8 在 [1-2]（出廠）時是板上 VREF（2.5 或 3.25 V，看 SB14），
+                                     // 在 [2-3] 時是 3.3 V。用三用電表量 CN5 第 8 腳（VREFP）後填實際值
+#endif
 #endif
 #ifndef FLY_TOL_PCT
 #define FLY_TOL_PCT 2                // 到速判定 ±%（6m 時轉速差 1% ≈ 加分排落點差 2.6cm，別放太寬）

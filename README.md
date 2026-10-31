@@ -25,11 +25,11 @@ rotbot/
   pipeline/            # loop(自主主迴圈 + AutonomousRunner) / state_machine(60 秒自主鎖定)
   teleop/              # 手動操控 Web 伺服器 + 控制頁（鍵盤 / 搖桿）+ aim_preview(預估落點)
   sim/                 # world(真實物理) / scene(合成影像) / closed_loop / twin(數位孿生) / pybullet_*
-firmware/rotbot_mcu/   # Arduino Uno 韌體（同一份原始碼也在電腦上跑成模擬器：firmware/host）
+firmware/rotbot_mcu/   # MCU 韌體：NUCLEO-G474RE（STM32duino）；同一份原始碼也在電腦上跑成模擬器：firmware/host
 configs/               # field.yaml（場地/球/機構/校正）、robot.yaml（機器人幾何）
 tools/                 # 各種可直接執行的工具（見下）
 docs/                  # 00_todo / 00_verify（先看）、6 m 評估、MCU 連線、網路操控、相機（imx296_jetson）
-tests/                 # pytest（80 項 + 2 項只在 Linux / 實體相機跑）
+tests/                 # pytest（81 項 + 2 項只在 Linux / 實體相機跑）
 ```
 
 ## 安裝

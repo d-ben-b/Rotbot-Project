@@ -1,15 +1,16 @@
 # -*- coding: utf-8 -*-
-"""致動器 HAL 實作 —— Mock（模擬）與 SerialMCU（真實 Arduino / 韌體模擬器）。
+"""致動器 HAL 實作 —— Mock（模擬）與 SerialMCU（真實 MCU / 韌體模擬器）。
 
 MockArduino：無硬體時的替身，記錄收到的指令並回 ack（閉迴路模擬用，in-process、最快）。
 SerialMCU：Orin 端的 MCU 函式庫，走協定 v1（見 protocol.py / docs/mcu_orin_link.md）。
   url 交給 pyserial 的 serial_for_url，所以同一份程式可接：
-    "COM5"、"/dev/ttyACM0"          → 真 Arduino（USB 序列）
+    "COM5"、"/dev/ttyACM0"          → 真 MCU（NUCLEO-G474RE 的 ST-LINK 虛擬序列埠；Arduino Uno 也可）
     "socket://127.0.0.1:5760"      → 電腦上跑的韌體模擬器（tools/mcu_sil.py，同一份韌體原始碼）
 """
 from __future__ import annotations
 
 import collections
+import os
 import threading
 import time
 
@@ -34,6 +35,28 @@ class MockArduino(ActuatorLink):
         return True
 
 
+ST_LINK_VID = 0x0483      # STMicroelectronics：Nucleo 板上 ST-LINK 的虛擬序列埠
+
+
+def resets_on_open(url: str) -> bool:
+    """開埠時 MCU 會不會重開機（會的話要等 EV BOOT）。
+
+    Arduino Uno（16U2 / CH340）開埠時 DTR 會重置 MCU；NUCLEO 的 ST-LINK 虛擬序列埠不會，
+    等 BOOT 只會白等 boot_wait。socket://（韌體模擬器）會模擬開機，視為會。查不到裝置時保守回 True。
+    """
+    if "://" in url:
+        return True
+    try:
+        from serial.tools import list_ports
+        dev = os.path.realpath(url) if url.startswith("/") else url      # /dev/serial/by-id/… 是連結
+        for port in list_ports.comports():
+            if port.device == dev or port.device == url:
+                return port.vid != ST_LINK_VID
+    except Exception:
+        pass
+    return True
+
+
 class LinkError(RuntimeError):
     """通訊失敗（逾時、斷線）。"""
 
@@ -52,7 +75,8 @@ class SerialMCU(ActuatorLink):
     * 背景讀取執行緒：解析每行、依 SEQ 交給等待中的請求；事件進佇列 / on_event 回呼。
     * 請求：分配 SEQ → 寫出 → 等回覆；逾時以「同一 SEQ」重送（MCU 去重，FIRE 不會連發）。
     * 背景輪詢 STAT（poll_hz）：同時當心跳餵 MCU 看門狗，並快取最新狀態。
-    * Arduino Uno 開埠會被 DTR 重置（bootloader ~1.6 s）→ open() 先等 EV BOOT 再 PING。
+    * Arduino Uno 開埠會被 DTR 重置（bootloader ~1.6 s）→ open() 先等 EV BOOT 再 PING；
+      NUCLEO 的 ST-LINK 序列埠不會重置 → 直接 PING（MCU 保留上次的歸零狀態）。
     """
 
     def __init__(self, url: str, baud: int = 115200, timeout: float = 0.15, retries: int = 3,
@@ -73,6 +97,7 @@ class SerialMCU(ActuatorLink):
         self.status: Status | None = None
         self.status_time = 0.0
         self.booted = False
+        self.resets_on_open = True
         self.stats = collections.Counter()
         self.rtt_ms: collections.deque[float] = collections.deque(maxlen=2000)
 
@@ -84,7 +109,8 @@ class SerialMCU(ActuatorLink):
         t = threading.Thread(target=self._reader, name="mcu-reader", daemon=True)
         t.start()
         self._threads = [t]
-        if wait_boot:                              # since=0：讀取緒啟動後就算（BOOT 可能已先到）
+        self.resets_on_open = resets_on_open(self.url)
+        if wait_boot and self.resets_on_open:      # since=0：讀取緒啟動後就算（BOOT 可能已先到）
             self.wait_event("BOOT", timeout=self.boot_wait, since=0, raise_on_timeout=False)
         self.ping()                                # 確認雙向通
         if self.poll_hz > 0:

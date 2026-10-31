@@ -7,18 +7,28 @@
 
 ---
 
-## 1. 把韌體燒進 Arduino Uno
+## 1. 把韌體燒進 MCU（NUCLEO-G474RE）
 
-只要一條 USB 線，不用接任何馬達。
+只要一條 USB 線，接板子上方 ST-LINK 那一端的 USB 孔，不用接任何馬達。
+韌體是用 Arduino 寫的，用 ST 官方的 Arduino 核心（STM32duino）編譯。
 
-1. 安裝 Arduino IDE 2，打開 `firmware/rotbot_mcu/rotbot_mcu.ino`。
-   同一個資料夾裡的其他檔案會一起編譯，不要搬動。
-2. 「工具 → 開發板」選 **Arduino Uno**；「工具 → 連接埠」選有 Arduino Uno 字樣的那個（例如 COM5）。
-3. 按左上角的「→」上傳。
-   - ✅ 下方出現「上傳完成」，程式大小約 13 KB。
-4. 打開「工具 → 序列埠監控視窗」，右下角選 **115200 baud** 和 **Newline**。
-   - ✅ 看到 `EV,1,BOOT,1*91`，這是板子開機的訊息。沒看到就按板子上的 RESET 鍵。
-5. 在輸入框打 `PING,0`，按 Enter。
+1. 安裝 Arduino IDE 2，在「檔案 → 偏好設定 → 其他開發板管理員網址」貼上：
+   `https://github.com/stm32duino/BoardManagerFiles/raw/main/package_stmicroelectronics_index.json`
+2. 「工具 → 開發板 → 開發板管理員」搜尋 STM32，安裝 **STM32 MCU based boards**（STMicroelectronics）。
+3. 打開 `firmware/rotbot_mcu/rotbot_mcu.ino`。同一個資料夾裡的其他檔案會一起編譯，不要搬動。
+4. 選板子和埠：
+   - 「工具 → 開發板 → STM32 MCU based boards」選 **Nucleo-64**。
+   - 「工具 → Board part number」選 **Nucleo G474RE**。
+   - 其他選項維持預設，上傳方式是 Mass Storage，不用另外裝軟體。
+   - 「工具 → 連接埠」選 STMicroelectronics STLink Virtual COM Port 那個（例如 COM7）。
+     裝置管理員裡沒有這個 COM 埠的話，安裝 ST 的 ST-LINK 驅動（STSW-LINK009）。
+5. 按左上角的「→」上傳。
+   - ✅ 沒有紅色錯誤訊息，程式大小約 33 KB（6%）。
+   - 上傳方式是把程式複製到板子模擬出來的隨身碟 NOD_G474RE。
+6. 打開「工具 → 序列埠監控視窗」，右下角選 **115200 baud** 和 **Newline**，再按板子上**黑色的 RESET 鍵**。
+   - ✅ 看到 `EV,1,BOOT,1*91`，這是開機訊息。
+   - Nucleo 打開序列埠時不會自動重開機（Uno 會），所以要自己按 RESET 才會看到。
+7. 在輸入框打 `PING,0`，按 Enter。
    - ✅ 回 `PONG,0,1,1,…`。兩個 1 是協定版本和韌體版本，最後的數字是開機後經過的毫秒數。
    - 也可以試試以下指令。每行第二個欄位一律打 0。
 
@@ -29,39 +39,52 @@
      | `ZERO,0,0,0` | 把現在的姿勢設成 0° | `ACK,0,0` |
 
      歸零之後再打一次 `AIM,0,1500,0`，會回 `ACK,0,0`。
-6. **關掉序列埠監控視窗**。不關的話，Python 會打不開這個埠。
-7. 在終端機執行：
+8. **關掉序列埠監控視窗**，按一下 RESET，然後在終端機執行：
 
    ```bash
-   python -m tools.mcu_link_test --port COM5
+   python -m tools.mcu_link_test --port COM7
    ```
 
-   - ✅ 最後一行是 `結果：PASS 12  FAIL 0  WARN 0  SKIP 9`。
-     SKIP 的 9 項有兩種：要動馬達的，和只有模擬器能測的。
-   - 板子上**還沒接任何馬達**的話，可以加 `--allow-motion` 再跑一次。
-     ✅ 應該是 `PASS 18  FAIL 0  SKIP 3`。這時腳位會送出訊號，但沒有東西會動。
+   - ✅ 最後一行 `FAIL 0`，PASS 大約 11 項。
+   - SKIP 的有三種：要動馬達的、只有模擬器能測的，以及開機訊息那一項。最後這項 SKIP 是因為 Nucleo 開埠不會重開機。
+   - 板子上**還沒接任何馬達**的話，可以加 `--allow-motion` 再跑一次，應該是 `FAIL 0`、PASS 約 17 項。
+     這時腳位會送出訊號，但沒有東西會動。
 
 ## 2. 接線（給硬體組，接馬達之前看）
 
-| Arduino 腳位 | 接到 |
+用板子上和 Arduino Uno 同位置的排針（CN5、CN6、CN8、CN9）。括號內是 STM32 腳位名稱。
+
+| 排針 | 接到 |
 | --- | --- |
-| D4 / D7 | 水平轉台 TMC2209 的 STEP / DIR |
-| D8 / D12 | 俯仰 TMC2209 的 STEP / DIR |
-| A3 | 兩顆 TMC2209 的 EN（LOW = 通電） |
-| D5 / D6 | 左 / 右飛輪驅動板 PWM |
-| D9 | 推球馬達 PWM |
+| D4 (PB5) / D7 (PA8) | 水平轉台 TMC2209 的 STEP / DIR |
+| D8 (PA9) / D12 (PA6) | 俯仰 TMC2209 的 STEP / DIR |
+| A3 (PB0) | 兩顆 TMC2209 的 EN（LOW = 通電） |
+| D5 (PB4) / D6 (PB10) | 左 / 右飛輪驅動板 PWM |
+| D9 (PC7) | 推球馬達 PWM |
 | A0、A1、A2、D2、D3 | 選配：推球原點開關、急停輔助接點、電池分壓、兩個飛輪轉速計。沒裝就不用接 |
+
+**Nucleo 的腳位是 3.3 V，不是 Uno 的 5 V：**
+
+- TMC2209 的 VIO 接板子的 3.3 V。
+- 兩顆 TMC2209 的 MS1、MS2 都接 3.3 V，設成 16 微步，韌體是照 16 微步算角度的。
+  兩隻都接地時是 8 微步，轉台會轉成指令角度的 2 倍。
+- 飛輪和推球驅動板的 PWM 輸入要能吃 3.3 V 邏輯。
+- 開關和感測器只接到 GND。韌體已經打開內部上拉，不要把 5 V 直接接進腳位。
+- 電池分壓用 47 kΩ / 10 kΩ（3S 滿電 12.6 V 會變成 2.2 V）。
+  ADC 參考電壓要量 CN5 第 8 腳（VREFP），把量到的數字填進 `config.h` 的 `VBAT_ADC_VREF`。
+
+其他設定：
 
 - 腳位、每度幾步、角度上下限都寫在 `firmware/rotbot_mcu/config.h`，改完要重新上傳。
 - **第一次接馬達時**，飛輪不要放球，發射口前面不要站人，然後執行：
 
   ```bash
-  python -m tools.mcu_link_test --port COM5 --allow-motion
+  python -m tools.mcu_link_test --port COM7 --allow-motion
   ```
 
-  - ✅ 結果是 `PASS 18`。
+  - ✅ 結果是 `FAIL 0`。
   - 轉的方向相反：把 `hal_arduino.h` 的 `PITCH_DIR_INVERT` 或 `YAW_DIR_INVERT` 改成 1。
-  - 轉的角度不對：改 `config.h` 的 `PITCH_STEPS_PER_DEG` 或 `YAW_STEPS_PER_DEG`。
+  - 轉的角度不對：先確認上面的微步設定，再改 `config.h` 的 `PITCH_STEPS_PER_DEG` 或 `YAW_STEPS_PER_DEG`。
 
 ## 3. 相機（Jetson 上）
 
@@ -102,6 +125,8 @@
 1. Jetson 只要準備一次：
    - 裝 `requirements.txt` 的套件，以及 Jetson 版的 PyTorch + ultralytics。
    - 把 `models/grid_holes_yolo11n.pt` 複製過去。模型權重不在 git 裡。
+   - Jetson 系統的 numpy 1.21 不要升級：JetPack 的 OpenCV 和 PyTorch 是照 numpy 1.x 編的；程式在 numpy 1.21 測過可以用。
+   - 序列埠權限：`sudo usermod -aG dialout $USER`，重新登入才生效。Nucleo 接上 Jetson 會是 `/dev/ttyACM0`。
 2. 在 Jetson 上執行 `python3 -m tools.robot_main --mcu /dev/ttyACM0`，相機會自動用 IMX296。
 3. 筆電或手機連同一台路由器，打開它印出來的網址（`http://192.168.x.x:8080`）。
 4. 開始前，先把轉塔擺到「槍管水平、正對前方」，然後按「歸零」。

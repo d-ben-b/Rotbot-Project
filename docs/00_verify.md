@@ -4,7 +4,7 @@
 要動手做的事（燒錄、接線、量球速）在另一份：[我要做什麼](00_todo.md)。
 
 - **A、B 兩節**只要這台電腦。數字是模擬/合成的，證明的是「程式邏輯對」。
-- **C 節**要接 Arduino。
+- **C 節**要接 MCU（NUCLEO-G474RE）。
 - **D 節**是只有實機才能證明的事。
 
 指令都在專案資料夾執行，先 `.venv\Scripts\activate`。
@@ -15,8 +15,8 @@
 
 | # | 要確認的事 | 指令 | 應該看到 |
 | --- | --- | --- | --- |
-| 1 | 程式整體沒壞 | `python -m pytest -q` | `80 passed, 2 skipped`（約 1 分鐘；skip 的 2 項只在 Linux 或接著實體相機時才跑） |
-| 2 | Orin 和 Arduino 之間的指令都對（同一份韌體在電腦上模擬） | `python -m tools.mcu_link_test --sil` | `結果：PASS 21  FAIL 0` |
+| 1 | 程式整體沒壞 | `python -m pytest -q` | `81 passed, 2 skipped`（約 1 分鐘；skip 的 2 項只在 Linux 或接著實體相機時才跑） |
+| 2 | Orin 和 MCU 之間的指令都對（同一份韌體在電腦上模擬） | `python -m tools.mcu_link_test --sil` | `結果：PASS 21  FAIL 0` |
 | 3 | AI 能自己投完一整場 | `python -m tools.run_autonomous --sim` | 約 35 秒後印出 `共 27 球、韌體推球計數 27`，以及 `得分 50、命中 24/27` 左右 |
 | 4 | 網頁操控和預估落點 | `python -m tools.robot_main --sim`，瀏覽器開 <http://localhost:8080> | 照下面 B 節檢查 |
 
@@ -38,14 +38,15 @@
 **畫面正中央不是落點。** 以前的版本在正中央畫了一個準星，那只是相機正前方。
 6 m 時球真正的落點比畫面中心低 1.2–1.6 m，現在改成畫預估落點。
 
-## C. 接上 Arduino 之後
+## C. 接上 MCU（NUCLEO-G474RE）之後
 
 | 要確認的事 | 怎麼做 | 應該看到 |
 | --- | --- | --- |
-| Arduino 收得到、回得對 | 序列埠監控視窗（115200、Newline）打 `PING,0` | `PONG,0,1,1,…` |
-| 通訊沒問題（不動馬達） | 先關掉監控視窗，再跑 `python -m tools.mcu_link_test --port COM5` | `PASS 12  FAIL 0  SKIP 9` |
-| 馬達、飛輪、推球的指令都對 | 同上，加 `--allow-motion` | `PASS 18  FAIL 0  SKIP 3` |
-| 轉塔角度回報正確（接了馬達才測） | `python -m tools.teleop_web --mcu COM5 --camera none --auto-s 5`，網頁依序按「歸零」→「開始」→ 5 秒後「切手動」→ 按 W | 網頁上的俯仰角跟著變；用量角器量，實際角度差 < 0.5° |
+| 韌體能在 G474RE 上編譯 | Arduino IDE 選 Nucleo-64 / Nucleo G474RE 後按「✓」驗證 | 約 33 KB（6%），沒有錯誤 |
+| MCU 收得到、回得對 | 序列埠監控視窗（115200、Newline）按 RESET 後打 `PING,0` | 先看到 `EV,1,BOOT,1*91`，再回 `PONG,0,1,1,…` |
+| 通訊沒問題（不動馬達） | 先關掉監控視窗、按 RESET，再跑 `python -m tools.mcu_link_test --port COM7` | `FAIL 0`，PASS 約 11 項（開機訊息那項 SKIP 是正常的） |
+| 馬達、飛輪、推球的指令都對 | 同上，加 `--allow-motion` | `FAIL 0`，PASS 約 17 項 |
+| 轉塔角度回報正確（接了馬達才測） | `python -m tools.teleop_web --mcu COM7 --camera none --auto-s 5`，網頁依序按「歸零」→「開始」→ 5 秒後「切手動」→ 按 W | 網頁上的俯仰角跟著變；用量角器量，實際角度差 < 0.5° |
 
 ## D. 只有實機能證明的事
 

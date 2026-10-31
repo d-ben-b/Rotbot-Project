@@ -1,6 +1,14 @@
-# MCU（Arduino）↔ Orin 連線：協定、函式庫與測試環境
+# MCU ↔ Orin 連線：協定、函式庫與測試環境
 
 > 2026-10-25。回答「MCU + Orin 函式庫能不能接起來、要用什麼測試環境」。
+>
+> **2026-10-31 更新：MCU 是 NUCLEO-G474RE（STM32G474RE），不是 Arduino Uno。** 下文寫 Uno 的地方以這段為準：
+> - 韌體不用改寫：用 Arduino API 寫的，透過 ST 官方的 STM32duino 核心編譯。FQBN 是 `STMicroelectronics:stm32:Nucleo_64:pnum=NUCLEO_G474RE`。
+>   出廠設定 33.3 KB flash（6%）/ 1.8 KB RAM（1%）；全感測 40.3 KB（7%）/ 1.9 KB（1%）；我們的檔案 0 警告。
+> - 用板上的 Arduino Uno 排針，腳位編號不變，對應的 STM32 腳位見 `config.h`。I/O 是 **3.3 V**。
+> - USB 序列：板上 ST-LINK 的虛擬序列埠（LPUART1 PA2/PA3），Jetson 上是 `/dev/ttyACM0`。
+>   **開埠不會重置 MCU**：沒有開機訊息，歸零狀態也會保留；`SerialMCU` 依 USB VID 0x0483 自動判斷，不白等 3 秒。
+> - 燒錄、接線、測試步驟見 [00_todo.md](00_todo.md)。
 
 ## 1. 結論
 
@@ -15,7 +23,7 @@
 **還沒驗證、需要板子的：** 真 Arduino 的 USB 序列（延遲、開埠重置）、馬達方向/步數比、轉速計與電壓量測的實際讀值。測試工具已備好，板子到手照 §5 跑 L2→L4 即可。
 
 ```text
-Jetson Orin (Python)                         Arduino Uno (C++)
+Jetson Orin (Python)                         NUCLEO-G474RE (C++，STM32duino)
   ControlLoop / TeleopServer                   rotbot_mcu.ino
         │ HAL: aim / flywheel / fire / jog            │
   SerialMCU（rotbot/actuation/link.py）          App（app.cpp：狀態機、看門狗、急停、去重）
@@ -50,7 +58,7 @@ Jetson Orin (Python)                         Arduino Uno (C++)
 
 | 事件（MCU → Orin） `EV,evseq,NAME,arg` | 何時 |
 |---|---|
-| `BOOT` | 開機（Uno 開埠被 DTR 重置 → 約 1.6 s 後） |
+| `BOOT` | 開機（Uno 開埠被 DTR 重置 → 約 1.6 s 後；Nucleo 開埠不重置，只有上電或按 RESET 時才有） |
 | `READY` | 進入可發射狀態 |
 | `FIRED` | 推球完成（arg = 累計球數） |
 | `WDOG` | 超過 `WDOG_MS`（1 s）沒收到合法指令 → 飛輪停、JOG 停 |
@@ -69,17 +77,17 @@ STAT 旗標：0x01 READY、0x02 MOVING、0x04 FLY_OK、0x08 FIRING、0x10 ESTOP�
 
 ## 3. 韌體設定（`firmware/rotbot_mcu/config.h`，每項可單獨 `-D` 覆寫）
 
-| 腳位（Uno 建議） | 用途 |
+| 腳位（Nucleo 的 Arduino 排針） | 用途 |
 |---|---|
-| D4 / D7 | 水平軸 TMC2209 STEP / DIR |
-| D8 / D12 | 俯仰軸 TMC2209 STEP / DIR |
-| A3 | 兩軸 EN（LOW 致能） |
-| D5 / D6 | 左 / 右飛輪 PWM |
-| D9 | 推球（曲柄滑塊）馬達 PWM |
-| A0 | 推球原點開關（選用） |
-| A1 | 急停輔助接點（選用，`ESTOP_SENSE_ENABLED`） |
-| A2 | 飛輪電池電壓分壓（選用，`VBAT_ENABLED`） |
-| D2 / D3 | 飛輪轉速計（中斷腳，選用，`FLY_HAS_TACH`） |
+| D4 (PB5) / D7 (PA8) | 水平軸 TMC2209 STEP / DIR |
+| D8 (PA9) / D12 (PA6) | 俯仰軸 TMC2209 STEP / DIR |
+| A3 (PB0) | 兩軸 EN（LOW 致能） |
+| D5 (PB4) / D6 (PB10) | 左 / 右飛輪 PWM |
+| D9 (PC7) | 推球（曲柄滑塊）馬達 PWM |
+| A0 (PA0) | 推球原點開關（選用） |
+| A1 (PA1) | 急停輔助接點（選用，`ESTOP_SENSE_ENABLED`） |
+| A2 (PA4) | 飛輪電池電壓分壓（選用，`VBAT_ENABLED`；不可超過 `VBAT_ADC_VREF`） |
+| D2 (PA10) / D3 (PB3) | 飛輪轉速計（外部中斷，選用，`FLY_HAS_TACH`） |
 
 ⚠️ 待硬體組確認：`PITCH/YAW_STEPS_PER_DEG`（目前 26.67 / 44.44：200 步 × 16 微步 × 減速比 3 / 5）、角度上下限、`FLY_MAX_RPM`、`FEED_MS`、方向是否要反（`*_DIR_INVERT`）。
 6 m 建議配置：**轉速計 + 電池電壓量測 + 推球原點開關**都裝（「full」設定；Uno 資源足夠）。
@@ -118,8 +126,8 @@ STAT 旗標：0x01 READY、0x02 MOVING、0x04 FLY_OK、0x08 FIRING、0x10 ESTOP�
 | L5 | 加上機構 | `python -m tools.run_autonomous --mcu /dev/ttyACM0 --twin` | 轉塔真的動、影像與計分先用數位孿生（還沒裝發射機構也能跑） |
 | L6 | 整機 | `python -m tools.run_autonomous --mcu /dev/ttyACM0`（相機預設用 IMX296） | 真相機 + YOLO + 真投球 |
 
-燒錄：Arduino IDE 開 `firmware/rotbot_mcu/rotbot_mcu.ino` 上傳；或
-`arduino-cli compile --upload -p COM5 --fqbn arduino:avr:uno firmware/rotbot_mcu`。
+燒錄：Arduino IDE 開 `firmware/rotbot_mcu/rotbot_mcu.ino` 上傳（步驟見 00_todo.md）；或
+`arduino-cli compile --upload -p COM7 --fqbn STMicroelectronics:stm32:Nucleo_64:pnum=NUCLEO_G474RE firmware/rotbot_mcu`。
 手動除錯：序列埠監控視窗 115200、換行 LF，直接打 `PING,0`、`STAT,0`、`ZERO,0,0,0`、`AIM,0,1000,0`（SEQ 0 = 不去重）。
 
 ## 6. Orin 端設定與常見問題
@@ -129,6 +137,6 @@ STAT 旗標：0x01 READY、0x02 MOVING、0x04 FLY_OK、0x08 FIRING、0x10 ESTOP�
 - **固定裝置名**（避免 ttyACM0/1 互換）：udev 規則
   `SUBSYSTEM=="tty", ATTRS{idVendor}=="2341", SYMLINK+="rotbot-mcu"` → 用 `/dev/rotbot-mcu`。
 - **FTDI 延遲**：`echo 1 | sudo tee /sys/bus/usb-serial/devices/ttyUSB0/latency_timer`（預設 16 ms）。
-- **開埠重置**：Uno 開埠會重置約 1.6 s，`SerialMCU.open()` 會等 `EV BOOT`（最多 3 s）再 PING；開好就不要反覆開關埠。
-- **用 40-pin UART 而不是 USB 時**：Orin 是 3.3 V、Uno 是 5 V，**一定要電位轉換**並共地；建議直接用 USB（同時供電給 Uno）。
+- **開埠重置**：Uno 開埠會重置約 1.6 s，`SerialMCU.open()` 會等 `EV BOOT`（最多 3 s）再 PING。Nucleo（ST-LINK，USB VID 0x0483）開埠不重置，直接 PING。
+- **用 40-pin UART 而不是 USB 時**：Orin 和 Nucleo 都是 3.3 V，共地即可（Uno 是 5 V 才需要電位轉換）；建議直接用 USB（同時供電給 Nucleo）。
 - **電源**：馬達電源與 Uno/Orin 分開，共地；紅色急停要切斷馬達電源（規則），`ESTOP_SENSE_ENABLED` 讓 MCU 也知道急停狀態。

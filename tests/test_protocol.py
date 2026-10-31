@@ -49,3 +49,18 @@ def test_parse_replies():
     assert pong.pong == (1, 1, 123456)
     with pytest.raises(P.ProtocolError):
         P.parse_frame(["ST", "1", "2"])
+
+
+def test_resets_on_open_by_usb_vendor(monkeypatch):
+    """Uno 類開埠會重置（要等 EV BOOT）；NUCLEO 的 ST-LINK（VID 0x0483）不會；模擬器 socket:// 視為會。"""
+    from types import SimpleNamespace
+
+    from serial.tools import list_ports
+
+    from rotbot.actuation.link import ST_LINK_VID, resets_on_open
+    ports = [SimpleNamespace(device="COM7", vid=ST_LINK_VID), SimpleNamespace(device="COM5", vid=0x2341)]
+    monkeypatch.setattr(list_ports, "comports", lambda: ports)
+    assert resets_on_open("COM7") is False
+    assert resets_on_open("COM5") is True
+    assert resets_on_open("COM99") is True                  # 查不到：保守等 BOOT
+    assert resets_on_open("socket://127.0.0.1:5760") is True
