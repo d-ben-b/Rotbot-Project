@@ -1,0 +1,15 @@
+# Jetson Orin（JetPack 6、Python 3.10）用這份，不要用 requirements.txt。
+# numpy 和 OpenCV 用 JetPack 內建的（numpy 1.21、OpenCV 4.8）：requirements.txt 的 numpy>=1.24 和
+# opencv-python 會把它們換掉（PyPI 上 opencv-python 5.0.0.93 要求 numpy>=2）。
+#
+#   pip3 install -r requirements-jetson.txt
+#   （PyTorch / torchvision 裝 NVIDIA 給 JetPack 6 的版本）
+#   pip3 install --no-deps ultralytics==8.4.188      # 不加 --no-deps 會連帶裝 numpy>=1.23 和 opencv-python
+#
+# 2026-10-31 在 Windows 用相同版本組合模擬（Python 3.10.22、numpy 1.21.6、OpenCV 4.7、torch 2.14.1 CPU、
+# ultralytics 8.4.188 --no-deps）：YOLO 偵測 12 孔、PnP 有解。還沒在 Jetson 上跑過。
+pyyaml>=6.0
+pyserial>=3.5      # Orin ↔ MCU（rotbot/actuation/link.py）
+aiohttp>=3.9       # 手動操控 Web 伺服器（rotbot/teleop）
+pillow             # ultralytics 讀圖需要（不依賴 numpy）
+pytest>=7.0

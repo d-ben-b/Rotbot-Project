@@ -29,7 +29,7 @@ firmware/rotbot_mcu/   # MCU 韌體：NUCLEO-G474RE（STM32duino）；同一份�
 configs/               # field.yaml（場地/球/機構/校正）、robot.yaml（機器人幾何）
 tools/                 # 各種可直接執行的工具（見下）
 docs/                  # 00_todo / 00_verify（先看）、6 m 評估、MCU 連線、網路操控、相機（imx296_jetson）
-tests/                 # pytest（81 項 + 2 項只在 Linux / 實體相機跑）
+tests/                 # pytest（85 項 + 2 項只在 Linux / 實體相機跑）
 ```
 
 ## 安裝
@@ -43,6 +43,8 @@ uv pip install -r requirements-gpu.txt
 # 韌體模擬器需要 C++ 編譯器：Linux/Orin 內建 g++；Windows 沒有的話 `uv pip install ziglang`
 pytest -q
 ```
+
+Jetson 不要裝 `requirements.txt`（會換掉 JetPack 的 numpy 和 OpenCV），改用 `requirements-jetson.txt`，步驟見 [docs/00_todo.md](docs/00_todo.md) 第 6 步。
 
 ## 常用工具
 

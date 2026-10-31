@@ -138,5 +138,11 @@ STAT 旗標：0x01 READY、0x02 MOVING、0x04 FLY_OK、0x08 FIRING、0x10 ESTOP�
   `SUBSYSTEM=="tty", ATTRS{idVendor}=="2341", SYMLINK+="rotbot-mcu"` → 用 `/dev/rotbot-mcu`。
 - **FTDI 延遲**：`echo 1 | sudo tee /sys/bus/usb-serial/devices/ttyUSB0/latency_timer`（預設 16 ms）。
 - **開埠重置**：Uno 開埠會重置約 1.6 s，`SerialMCU.open()` 會等 `EV BOOT`（最多 3 s）再 PING。Nucleo（ST-LINK，USB VID 0x0483）開埠不重置，直接 PING。
+- **連線中 MCU 重開機**（2026-10-31 加入）：收到 `EV BOOT`，或狀態從「已歸零」變「未歸零」且不是急停，`SerialMCU.reboots` 加 1。
+  - 處理：網頁伺服器呼叫 `restore_after_reboot()`。
+  - 補回歸零：ZERO 設成重開機前最後一筆角度，加上重開機後被 JOG 轉過的步數。
+  - 重送：重開機前的 AIM 目標和飛輪轉速。
+  - 網頁顯示紅色警告，按「重置」才消失。
+  - 急停造成的未歸零不算重開機，舊角度也作廢，因為急停時步進斷電，轉塔可能被推動。
 - **用 40-pin UART 而不是 USB 時**：Orin 和 Nucleo 都是 3.3 V，共地即可（Uno 是 5 V 才需要電位轉換）；建議直接用 USB（同時供電給 Nucleo）。
 - **電源**：馬達電源與 Uno/Orin 分開，共地；紅色急停要切斷馬達電源（規則），`ESTOP_SENSE_ENABLED` 讓 MCU 也知道急停狀態。

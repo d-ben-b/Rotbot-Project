@@ -64,3 +64,22 @@ def test_resets_on_open_by_usb_vendor(monkeypatch):
     assert resets_on_open("COM5") is True
     assert resets_on_open("COM99") is True                  # 查不到：保守等 BOOT
     assert resets_on_open("socket://127.0.0.1:5760") is True
+
+
+def test_reboot_detected_from_status_without_boot_event():
+    """EV BOOT 那行被弄壞時，靠狀態「已歸零 → 未歸零（不是急停）」判斷重開機；急停不算，且舊角度作廢。"""
+    from rotbot.actuation.link import SerialMCU
+    mcu = SerialMCU("loop://")
+    mcu._opened = True
+
+    def st(flags, p_cdeg, y_cdeg):
+        mcu._handle_line(P.encode_line("ST", 0, flags, p_cdeg, y_cdeg, 0, 0, 0, 0, 0, -1).strip())
+
+    st(P.F_HOMED, 1500, 300)
+    st(0, 0, 0)
+    assert mcu.reboots == 1 and mcu.pose_before_reboot == (15.0, 3.0, False)
+    st(0, 0, 0)
+    assert mcu.reboots == 1                                  # 同一次重開機只算一次
+    st(P.F_HOMED, 1500, 300)
+    st(P.F_ESTOP, 1500, 300)
+    assert mcu.reboots == 1 and mcu.pose_before_reboot is None

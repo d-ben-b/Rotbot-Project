@@ -162,3 +162,49 @@ def test_teleop_end_to_end_with_firmware():
         with SerialMCU(sil.url) as mcu:
             mcu.zero(0.0, 0.0)
             asyncio.run(scenario(mcu))
+
+
+def test_teleop_restores_zero_after_mcu_reboot():
+    """手動中 MCU 重開機：網頁跳警告、自動補回歸零、飛輪轉速恢復；按「重置」後警告消失。"""
+    from tools.mcu_sil import CompilerNotFound, SilProcess, build
+    try:
+        build("full")
+    except CompilerNotFound as e:
+        pytest.skip(str(e))
+    from rotbot.actuation.link import SerialMCU
+
+    async def scenario(mcu):
+        server = TeleopServer(mcu=mcu, camera=None, sm=MatchStateMachine(auto_s=0.2, match_s=60))
+        runner, port = await _serve(server)
+        try:
+            async with aiohttp.ClientSession() as s:
+                ws = await s.ws_connect(f"http://127.0.0.1:{port}/ws")
+                await ws.send_json({"t": "cmd", "name": "start"})
+                await asyncio.sleep(0.3)
+                await ws.send_json({"t": "cmd", "name": "manual"})
+                await _wait(ws, lambda m: m["t"] == "state" and m["game"] == "MANUAL")
+                await ws.send_json({"t": "input", "jog": [0, 0], "fly": 2400, "fire": False})
+                await asyncio.sleep(0.3)
+                mcu.write_raw(b"!RESET\n")
+                n = await _wait(ws, lambda m: m["t"] == "notice" and "MCU 重開機" in m["msg"])
+                assert "俯仰 12.00°、水平 -5.00°" in n["msg"], n["msg"]
+                st = mcu.get_status()
+                assert st.homed and (st.pitch_deg, st.yaw_deg) == (12.0, -5.0)
+                assert st.rpm_target == 2400
+                await _wait(ws, lambda m: m["t"] == "state" and m["mcu_warning"] == n["msg"])
+                await ws.send_json({"t": "cmd", "name": "reset"})
+                await _wait(ws, lambda m: m["t"] == "state" and m["game"] == "IDLE" and not m["mcu_warning"])
+                await ws.close()
+        finally:
+            await runner.cleanup()
+
+    with SilProcess("full") as sil:
+        with SerialMCU(sil.url) as mcu:
+            mcu.zero(0.0, 0.0)
+            mcu.aim(12.0, -5.0)
+            for _ in range(200):
+                st = mcu.get_status()
+                if not st.moving and (st.pitch_deg, st.yaw_deg) == (12.0, -5.0):
+                    break
+                time.sleep(0.02)
+            asyncio.run(scenario(mcu))

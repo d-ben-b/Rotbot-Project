@@ -39,3 +39,59 @@ def test_hal_send_fires_one_ball(sil):
         st = mcu.get_status()
         assert abs(st.pitch_deg - 24.0) < 0.05 and abs(st.yaw_deg - 3.0) < 0.05
         assert st.shots == 1
+
+
+def _settle(mcu, pitch, yaw, timeout=3.0):
+    import time
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        st = mcu.get_status()
+        if not st.moving and abs(st.pitch_deg - pitch) < 0.05 and abs(st.yaw_deg - yaw) < 0.05:
+            return st
+        time.sleep(0.02)
+    raise AssertionError(f"沒轉到 ({pitch}, {yaw})")
+
+
+def test_reboot_detected_and_zero_restored(sil):
+    """比賽中 MCU 重開機：偵測到 → 用重開機前的角度補回歸零（含補回前被 JOG 轉過的量）→ AIM 照常。"""
+    import time
+
+    from rotbot.actuation.link import NakError, SerialMCU
+    with SerialMCU(sil.url) as mcu:
+        mcu.zero(0, 0)
+        mcu.aim(12.0, -5.0)
+        _settle(mcu, 12.0, -5.0)
+        time.sleep(0.25)                                    # 背景輪詢記下停好的角度
+        mcu.write_raw(b"!RESET\n")                          # 模擬器重新開機
+        end = time.monotonic() + 2.0
+        while mcu.reboots == 0 and time.monotonic() < end:
+            time.sleep(0.02)
+        assert mcu.reboots == 1
+        assert mcu.pose_before_reboot[:2] == pytest.approx((12.0, -5.0), abs=0.02)
+        with pytest.raises(NakError) as e:                  # 還沒補回：未歸零，MCU 拒絕 AIM
+            mcu.aim(10.0, 0.0)
+        assert e.value.code == 7
+        mcu.jog(0.0, 20.0)                                  # 補回前被轉了一段
+        time.sleep(0.3)
+        p, y = mcu.restore_after_reboot()
+        st = mcu.get_status()
+        assert st.homed and (st.pitch_deg, st.yaw_deg) == pytest.approx((p, y), abs=0.02)
+        assert p == pytest.approx(12.0, abs=0.02) and 2.0 < y + 5.0 < 8.0   # 20°/s × 約 0.3 s
+        mcu.aim(12.0, -5.0)
+        _settle(mcu, 12.0, -5.0)
+        assert mcu.restore_after_reboot() is None           # 已歸零：不再補
+        time.sleep(0.25)
+        assert mcu.reboots == 1                             # EV BOOT 和狀態變化只算一次
+
+        mcu.flywheel(1800)                                  # AI 那一發轉到一半時重開機
+        mcu.aim(30.0, 10.0)
+        time.sleep(0.15)
+        mcu.write_raw(b"!RESET\n")
+        end = time.monotonic() + 2.0
+        while mcu.reboots == 1 and time.monotonic() < end:
+            time.sleep(0.02)
+        assert mcu.reboots == 2 and mcu.pose_before_reboot[2]   # 記下「當時在轉」
+        assert mcu.get_status().rpm_target == 0
+        mcu.restore_after_reboot()
+        st = _settle(mcu, 30.0, 10.0)                       # 重送的 AIM 讓它繼續轉到目標
+        assert st.rpm_target == 1800                        # 飛輪轉速也重送了

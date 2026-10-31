@@ -13,7 +13,7 @@ AI 自主棒球投手機器人（2026 TEL Robot Combat，隊伍：嘻諧們）�
 
 ## 其他慣例
 - **設定集中**在 `configs/field.yaml`（型別化於 `rotbot/config.py`）；硬體到位只改 YAML，不動程式碼。
-- 變更後**跑 `pytest`**（目前 81 passed + 2 skipped；韌體模擬器測試需要 C++ 編譯器，Windows 用 `pip install ziglang`），把結果寫進 changelog。
+- 變更後**跑 `pytest`**（目前 85 passed + 2 skipped；韌體模擬器測試需要 C++ 編譯器，Windows 用 `pip install ziglang`），把結果寫進 changelog。
 - **權重 `.pt`、`datasets/`、`runs/`、`rotbot/sim/assets/`** 皆 gitignore，不入庫。
 - 分層：`perception → decision → actuation`，模擬替身在 `sim/`，硬體介面在 `hal.py`。
 - 執行工具用 `python -m tools.xxx` 或直接 `python tools/xxx.py`（皆支援）。

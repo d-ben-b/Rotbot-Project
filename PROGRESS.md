@@ -1,7 +1,7 @@
 # Rotbot 軟體進度報告
 
 > AI 自主棒球投手機器人 — 軟體端｜嘻諧們｜2026 TEL 東京威力科創機器人大賽
-> 報告日期：2026-10-25｜負責：軟體（單人）｜成果報告書：11/7–11/9（通訊硬體之後凍結）｜比賽日：2026-11-21
+> 報告日期：2026-10-31｜負責：軟體（單人）｜成果報告書：11/7–11/9（通訊硬體之後凍結）｜比賽日：2026-11-21
 
 ---
 
@@ -27,7 +27,7 @@
 | 互動物理沙盒（PyBullet） | ✅ 核心完成 | 依 CAD/規則建模、手動⇄YOLO 自動 |
 | P5 硬體整合 / P6 賽前 | ▶ 進行中 | 相機已到位並標定（IMX296 + 6 mm）；其餘等硬體，步驟見 docs/00_todo.md |
 
-規模：Python ~11,700 行（git 追蹤的 .py，含測試/工具/原型）、韌體 C++ ~1,100 行、81 個自動化測試（全綠，另 2 項只在 Linux / 實體相機跑）。
+規模：Python ~11,700 行（git 追蹤的 .py，含測試/工具/原型）、韌體 C++ ~1,100 行、85 個自動化測試（全綠，另 2 項只在 Linux / 實體相機跑）。
 
 ---
 
@@ -86,6 +86,11 @@
 - **預估落點**（`teleop/aim_preview.py`）：轉塔實際角度 + 飛輪目標轉速 → 同一個含阻力模型 → 網板上的落點、最近的孔、會不會進；
   畫在 MJPEG 畫面上（綠 = 會進、橘 = 不會進，畫面外畫箭頭）＋右下角網板小地圖＋網頁文字。比賽主程式會帶入當場校正器的全域偏差。
 - **入口文件**：[docs/00_todo.md](docs/00_todo.md)（燒錄、接線、量球速…照順序做）、[docs/00_verify.md](docs/00_verify.md)（怎麼確認）。
+
+### MCU 重開機自動補回 + Jetson 套件清單（2026-10-31）
+- **MCU 重開機**：`SerialMCU` 偵測重開機（`EV BOOT`，或已歸零 → 未歸零且不是急停），`restore_after_reboot()` 用重開機前的角度 ZERO、
+  重送 AIM 目標與飛輪轉速；網頁伺服器自動執行並顯示紅色警告。
+- **Jetson**：`requirements-jetson.txt`（不含 numpy / OpenCV，用 JetPack 內建的），ultralytics 用 `--no-deps` 安裝。
 
 ---
 
@@ -174,7 +179,8 @@ v0 逐發抖動 ≤ 0.1 m/s；練習→比賽轉速漂移 < 1%（否則需要比
 | ✅ 6 mm 視角（10/07 的 ★） | 2.5 m 時只看得到部分孔而認錯孔；**6 m 時整面網框入鏡**（掃視姿態四邊 ≥ 218 px），render+YOLO 51 分，不必換鏡頭 | 仍有的風險：板子被切掉時會認錯孔（隨機視角 7/571）→ 機器人偏離網框中心 > 1 m 時把 `grid_cx` 填進設定 |
 | 預估落點的準度 | 依 v0 / Cd / 安裝偏差的猜測值：模擬中沒校正時差約 20 cm，帶入練習 9 球的校正後 ≤ 6 cm | 打牆擬合（`fit_ballistics`）+ 練習校正檔；實機用牆上膠帶驗證（docs/00_verify.md D 節） |
 | 相機外參 `camera_mount` | 假設同軸、對齊；畫面上的預估落點標記位置依賴它（1° ≈ 畫面 31 px） | 硬體組量相機相對槍管的位置與角度 |
-| Jetson 執行環境 | 機上有 numpy 1.21 / OpenCV 4.8 / pytest 6.2.5；沒有 ultralytics、torch、pybullet、模型權重 | 建環境（Jetson 版 PyTorch 或 TensorRT）、把權重搬上去 |
+| Jetson 執行環境 | 機上有 numpy 1.21 / OpenCV 4.8 / pytest 6.2.5；沒有 ultralytics、torch、pybullet、模型權重。10/31 起用 `requirements-jetson.txt` + `ultralytics --no-deps`，在 Windows 用相同版本組合模擬過可推論 | 照 docs/00_todo.md 第 6 步建環境、跑檢查指令（確認 NVIDIA 的 PyTorch 能配 numpy 1.21）、把權重搬上去 |
+| MCU 比賽中重開機 | 自動補回歸零並重送 AIM / 飛輪（模擬：重開機到下一球 1.06–1.31 s，正常 1.12 s）。重開機時轉塔在轉的話，補回的角度最多差 6°（俯仰）/ 9°（水平）；模擬中 AI 不受影響，手動的預估落點會跟著偏 | 實機按板上 RESET 驗證（docs/00_verify.md C 節）；查明重開機原因（電源、USB 線） |
 
 ---
 
@@ -199,6 +205,36 @@ v0 逐發抖動 ≤ 0.1 m/s；練習→比賽轉速漂移 < 1%（否則需要比
 
 > **append-only**：每次更新只**新增**條目、不改舊條目，保留數字與決策的演進供工作日誌追蹤。
 > 上方 §0–§8 為「最新快照」；本區為「歷史紀錄」。新到舊排列。
+
+### 2026-10-31（續）：MCU 重開機自動補回歸零、Jetson 套件清單
+
+- **起因**：上一條之後列出的兩個「接上韌體後」的問題。
+  - 比賽中 MCU 重開機（電壓掉、碰到 RESET）後韌體忘記歸零，AIM 一律回 NAK 7（未歸零）。
+    網頁的「歸零」只在待命時能按；按「重置」回待命會清掉比賽計時，再開始又鎖 60 秒自主。
+  - `requirements.txt` 的 `numpy>=1.24` 在 Jetson（numpy 1.21）上會讓 pip 另裝新版 numpy。
+    PyPI 上 `opencv-python` 5.0.0.93 要求 `numpy>=2`，`ultralytics` 8.4.188 要求 `numpy>=1.23.0` 和 `opencv-python`，所以只改 numpy 下限擋不住。
+- **重開機偵測與補回**（`actuation/link.py`、`teleop/server.py`、`teleop/static/index.html`）：
+  - `SerialMCU` 收到 `EV BOOT`，或狀態從已歸零變未歸零且不是急停 → `reboots` +1，`pose_before_reboot` 記下重開機前最後一筆角度。
+    急停時舊角度作廢（步進斷電，轉塔可能被推動）。
+  - `restore_after_reboot()`：ZERO = 重開機前角度 + 重開機後被 JOG 轉過的步數；再重送最後的 AIM 目標（JOG / STOP 之後不送）和飛輪轉速。
+  - 網頁伺服器每 0.1 s 檢查一次，自動補回，頁面上方顯示紅色警告，按「重置」才消失。
+- **驗證（模擬）**：
+  - 韌體模擬器 `!RESET`：只算 1 次重開機；角度補回 (12.00°, −5.00°)；補回前 JOG 轉過的量有加上；轉到一半重開機時會繼續轉到目標；飛輪轉速恢復。
+  - AI 自主中重開機（`robot_main.build_robot` + 數位孿生，3 次）：重開機到下一球投完 1.06–1.31 s，正常每球間隔中位數 1.11–1.12 s；重開機後 6 球中 5。
+    沒有重送 AIM / 飛輪的版本是 5.53 s（進行中那一發等 4 s 逾時）。
+  - 補回的角度有誤差時（轉塔實際角度 = MCU 計數 + δ，27 球，模擬/合成評估）：δ = (0, 0)、(1°, 1°)、(3°, −3°)、(−2°, 5°)、(6°, 0)、(0, 9°)、(−6°, −9°) 都是命中 24、50 分；
+    誤差中位數 5.2 cm（δ = 0）、最大 7.6 cm（δ = (−6°, −9°)）。推測原因：AI 用同一個角度計數算相機位置和下瞄準指令，偏差在兩邊抵銷。手動的預估落點會跟著偏。
+  - 重開機時轉塔在轉的話，補回的角度最多差一次狀態輪詢（0.1 s）轉的量：俯仰 60°/s → 6°、水平 90°/s → 9°，在上面測過的範圍內。
+- **Jetson 套件**：
+  - 新增 `requirements-jetson.txt`（pyyaml、pyserial、aiohttp、pillow、pytest）；numpy、OpenCV 用 JetPack 內建的；ultralytics 用 `pip3 install --no-deps ultralytics==8.4.188`。
+  - 驗證（Windows 上模擬 Jetson 的版本組合）：Python 3.10.22、numpy 1.21.6、OpenCV 4.7.0、torch 2.14.1 CPU、ultralytics 8.4.188 `--no-deps` → YOLO 偵測 12 孔、PnP 有解。
+    matplotlib 換成 3.5.3 也一樣；不裝 matplotlib 也能推論；不裝 pillow 會 import 失敗。
+  - ultralytics 載入 `.pt` 權重時不會自動 pip 安裝；`.engine` 只在 Python ≤ 3.8.10 的 Jetson 上要求 numpy 1.23.5。
+  - 還沒在 Jetson 上跑過；NVIDIA 的 PyTorch 能不能配 numpy 1.21 要在機上確認（`00_todo.md` 第 6 步的檢查指令）。
+- **文件**：`00_todo.md` 第 6 步改成 Jetson 清單 + 檢查指令，並加「出現紅色 MCU 重開機警告時」；`00_verify.md` C 節加「按板上 RESET 看自動補回」；
+  `mcu_orin_link.md` 加重開機處理；`requirements.txt`、`requirements-gpu.txt`、README 註明 Jetson 不用它們。
+- 測試：新增 `test_reboot_detected_from_status_without_boot_event`、`test_reboot_detected_and_zero_restored`（full / basic 兩個韌體變體）、
+  `test_teleop_restores_zero_after_mcu_reboot`；全套 **85 passed、2 skipped**。
 
 ### 2026-10-31：MCU 改為 NUCLEO-G474RE（韌體以 STM32duino 編譯）
 

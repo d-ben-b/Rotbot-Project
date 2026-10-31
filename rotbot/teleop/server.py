@@ -13,6 +13,8 @@
   * 前 60 秒（AUTONOMOUS 鎖定）一律拒絕手動輸入（規則：自主期間不得遙控）。
   * Deadman：駕駛 deadman_s 沒送輸入 → JOG 歸零；駕駛斷線 → STOP（JOG 停 + 飛輪停）。
   * MCU 自己還有看門狗（1 s 沒指令 → 飛輪停），Orin 當掉也安全。
+  * MCU 重開機（SerialMCU.reboots 變了）：用重開機前的角度自動補回歸零、重送 AIM 目標與飛輪轉速，
+    網頁顯示警告直到按「重置」。
 """
 from __future__ import annotations
 
@@ -114,6 +116,8 @@ class TeleopServer:
         self.last_jog_t = 0.0
         self.last_fly = 0
         self.last_error = ""
+        self.mcu_warning = ""
+        self._reboots_seen = 0
         self.cmd_ms: collections.deque[float] = collections.deque(maxlen=200)
         self.dry_log: collections.deque[tuple] = collections.deque(maxlen=200)
         self._exec = ThreadPoolExecutor(max_workers=1, thread_name_prefix="mcu")   # MCU 呼叫序列化
@@ -165,7 +169,8 @@ class TeleopServer:
             mcu_rtt_ms=round(statistics.median(rtt), 2) if rtt else None,
             cmd_ms=round(statistics.median(list(self.cmd_ms)[-50:]), 2) if self.cmd_ms else None,
             jog=self.last_jog, fly=self.last_fly, rpm_preset=self.rpm_preset, max_dps=self.max_dps,
-            last_error=self.last_error, video_frames=self.frames.frames, preview=self._preview_info())
+            last_error=self.last_error, mcu_warning=self.mcu_warning,
+            video_frames=self.frames.frames, preview=self._preview_info())
 
     # ── 預估落點 ─────────────────────────────────────
     def _intrinsics(self):
@@ -231,9 +236,37 @@ class TeleopServer:
         c.notice_t[key] = now
         await self._send(c, dict(t="notice", msg=text))
 
+    # ── MCU 重開機 ───────────────────────────────────
+    async def _check_reboot(self):
+        n = getattr(self.mcu, "reboots", 0)
+        if n == self._reboots_seen:
+            return
+        self._reboots_seen = n
+        pose = self.mcu.pose_before_reboot
+        head = f"MCU 重開機（第 {n} 次）"
+        if pose is None:
+            msg = f"{head}：重開機前沒有歸零，無法自動補回；回待命、擺好起始姿態後按「歸零」"
+        else:
+            loop = asyncio.get_running_loop()
+            try:                                     # 走同一個執行緒池：補回期間不會插進 JOG
+                got = await loop.run_in_executor(self._exec, self.mcu.restore_after_reboot)
+            except Exception as e:
+                got, msg = None, f"{head}：補回歸零失敗（{e}）"
+            else:
+                msg = f"{head}：已經重新歸零"
+            if got is not None:
+                msg = f"{head}：已用重開機前的角度補回歸零（俯仰 {got[0]:.2f}°、水平 {got[1]:.2f}°）"
+                if pose[2]:
+                    msg += "；當時轉塔在轉，角度可能有誤差"
+        self.mcu_warning = msg
+        self._log(msg)
+        for c in list(self.clients):
+            await self._notice(c, msg)
+
     # ── 背景工作 ─────────────────────────────────────
     async def _broadcaster(self):
         while True:
+            await self._check_reboot()
             st = self.sm.update()
             if st != self._prev_state:                       # 進入急停/結束/交還 AI → 停手動動作
                 if st in (GameState.ESTOP, GameState.FINISHED, GameState.AUTONOMOUS) \
@@ -354,7 +387,7 @@ class TeleopServer:
                 await self._safe_stop("交還 AI")
         elif name == "reset":
             self.sm.reset()
-            self.last_error = ""
+            self.last_error = self.mcu_warning = ""
         elif name == "stop":
             await self._safe_stop(f"#{c.id} 按 STOP")
         elif name == "zero":

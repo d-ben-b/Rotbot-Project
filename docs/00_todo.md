@@ -1,6 +1,6 @@
 # 我要做什麼（照順序做）
 
-2026-10-25 版。每一步都寫了「怎麼做」和「看到什麼就算成功」。
+2026-10-31 版。每一步都寫了「怎麼做」和「看到什麼就算成功」。
 要確認軟體本身對不對，看另一份：[怎麼確認軟體是對的](00_verify.md)。
 
 指令都在專案資料夾的終端機執行，先啟動環境：電腦上 `.venv\Scripts\activate`；Jetson 上把 `python` 換成 `python3`。
@@ -123,9 +123,23 @@
 ## 6. 整台機器人
 
 1. Jetson 只要準備一次：
-   - 裝 `requirements.txt` 的套件，以及 Jetson 版的 PyTorch + ultralytics。
+   - numpy 和 OpenCV 用 JetPack 內建的（numpy 1.21、OpenCV 4.8）。**不要裝 `requirements.txt`**，它會把這兩個換成新版。
+   - 依序執行：
+
+     ```bash
+     pip3 install -r requirements-jetson.txt
+     # 這裡裝 NVIDIA 給 JetPack 6 的 PyTorch 和 torchvision
+     pip3 install --no-deps ultralytics==8.4.188
+     ```
+
+     ultralytics 一定要加 `--no-deps`，不加的話它也會把 numpy 和 OpenCV 換掉。
+   - ✅ 執行下面這行，印出的三個值依序是 `1.21` 開頭、`4.8` 開頭、`True`（GPU 可用）：
+
+     ```bash
+     python3 -c "import numpy, cv2, torch; print(numpy.__version__, cv2.__version__, torch.cuda.is_available())"
+     ```
+
    - 把 `models/grid_holes_yolo11n.pt` 複製過去。模型權重不在 git 裡。
-   - Jetson 系統的 numpy 1.21 不要升級：JetPack 的 OpenCV 和 PyTorch 是照 numpy 1.x 編的；程式在 numpy 1.21 測過可以用。
    - 序列埠權限：`sudo usermod -aG dialout $USER`，重新登入才生效。Nucleo 接上 Jetson 會是 `/dev/ttyACM0`。
 2. 在 Jetson 上執行 `python3 -m tools.robot_main --mcu /dev/ttyACM0`，相機會自動用 IMX296。
 3. 筆電或手機連同一台路由器，打開它印出來的網址（`http://192.168.x.x:8080`）。
@@ -133,6 +147,10 @@
 5. 按「開始」就等於哨音：前 60 秒 AI 自己投，之後可以按「切手動」。
 6. 手動時看畫面上的圈：**綠圈 = 這一球會進，橘圈 = 不會進。**
    右下角的小圖是整面網板，瞄高處時網板會跑出畫面，就看小圖。
+7. 畫面上方出現紅色的「MCU 重開機」警告時：
+   - 程式已經自動補回歸零，也重送了轉塔目標和飛輪轉速，比賽照常進行，不用按任何鍵。
+   - 賽後檢查 USB 線和電源，按「重置」警告就會消失。
+   - 警告寫「無法自動補回」，代表重開機前沒按過歸零。這時要回待命，擺好姿勢重新歸零。
 
 ## 7. 比賽前（練習日）
 
