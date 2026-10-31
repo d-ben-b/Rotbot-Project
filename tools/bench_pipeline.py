@@ -2,7 +2,7 @@
 """感知 + 決策 每階段延遲量測 —— 在 Orin 上跑，確認自主迴圈的延遲預算（每球節拍 6.7 s）。
 
     python -m tools.bench_pipeline                                   # 合成影像 + PyTorch 權重
-    python -m tools.bench_pipeline --camera 0                        # 含真相機擷取
+    python -m tools.bench_pipeline --camera cfg                      # 含真相機擷取（field.yaml 的 IMX296）
     python -m tools.bench_pipeline --export-trt                      # （Orin 上）.pt → TensorRT FP16 引擎
     python -m tools.bench_pipeline --weights models/grid_holes_yolo11n.engine
 
@@ -38,7 +38,7 @@ def _stats(xs: list[float]) -> str:
 def main():
     ap = argparse.ArgumentParser(description="感知/決策延遲量測")
     ap.add_argument("--weights", default=str(REPO_ROOT / "models" / "grid_holes_yolo11n.pt"))
-    ap.add_argument("--camera", default=None, help="相機編號 / GStreamer 管線；省略 = 合成影像（6m 正前方）")
+    ap.add_argument("--camera", default=None, help="cfg（field.yaml 的 IMX296）/ USB 相機編號 / GStreamer 管線；省略 = 合成影像（6m 正前方）")
     ap.add_argument("--n", type=int, default=100)
     ap.add_argument("--imgsz", type=int, default=960)
     ap.add_argument("--device", default="0")
@@ -55,16 +55,17 @@ def main():
         print(f"TensorRT 引擎：{weights}")
 
     if args.camera is not None:
-        from rotbot.perception.camera import RealCamera
-        cam = RealCamera(cfg.camera, device=int(args.camera) if args.camera.isdigit() else args.camera)
+        from rotbot.perception.camera import open_camera
+        cam = open_camera(args.camera, cfg)
         grab = cam.read
+        K = cam.intrinsics()
     else:
         from rotbot.sim.scene import SceneGenerator
         img = SceneGenerator(cfg, randomize=False).sample(lit_bonus=1).image
         grab = lambda: img                                   # 合成影像只做一次，不計入擷取時間
+        K = cfg.camera.matrix()
 
     det = YoloDetector(weights, device=args.device, imgsz=args.imgsz)
-    K = cfg.camera.matrix()
     t = {k: [] for k in ("capture", "detect", "localize", "plan", "total")}
     for i in range(args.n + 10):
         t0 = time.perf_counter()
@@ -85,6 +86,12 @@ def main():
     for k, v in t.items():
         print(f"  {k:9s} {_stats(v)}")
     print(f"  → 感知+決策 {1000 / statistics.median(t['total']):.1f} 次/秒")
+    center = next((a for a in est.aims if (a.group, a.idx) == ("main", 4)), None)
+    if est.board_pose is None or center is None:
+        print("  定位：整板 PnP 失敗（孔沒拍全或偵測太少）")
+    else:                                                    # 實拍時拿捲尺量「鏡頭 → 中排中孔心」比對
+        print(f"  定位：看到 {len(est.aims)} 孔；中排中孔心距離 {center.distance:.3f} m、"
+              f"方位 {center.bearing:+.2f}°、俯仰 {center.elev:+.2f}°")
 
 
 if __name__ == "__main__":

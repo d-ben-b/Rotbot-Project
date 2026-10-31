@@ -186,13 +186,14 @@ def aim_for_target(target_zy: tuple[float, float], cfg: Config) -> tuple[float, 
     return aim_at_point((cfg.field.dist_x, y_t - cfg.field.launch_h, z_t), cfg)
 
 
-def model_shoot(cfg: Config):
+def model_shoot(cfg: Config, v0: float | None = None):
     """回傳腦內模型的「投射」函式 shoot(pitch, yaw) -> (z, y離地) 或 None。
 
     落點取彈道穿過 x = dist_x 平面處，座標慣例同 sim.world.BallisticWorld.shoot；
-    供 estimate_sensitivity 用（實機上沒有「真實世界」可呼叫，只能用模型估靈敏度）。
+    供 estimate_sensitivity 用（實機上沒有「真實世界」可呼叫，只能用模型估靈敏度），
+    以及手動操控的預估落點（v0 依飛輪轉速換算；省略時用 v0_model）。
     """
-    model = aim_model(cfg)
+    model = aim_model(cfg, v0)
     x_plane, h0 = cfg.field.dist_x, cfg.field.launch_h
 
     def shoot(pitch: float, yaw: float):

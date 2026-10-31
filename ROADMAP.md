@@ -138,8 +138,9 @@ rotbot/
 **DoD：** ✅ 一鍵跑完整場模擬並產出成績報告。truth+noise 版（30 場）：校正後 總分51/命中92%/加分32% vs 未校正 45/83%/4%；真 render+YOLO 版單場 52/93%/33%。
 
 ### P5 — 硬體到位後整合（硬體 milestone 觸發；步驟見 docs/hardware_bringup_plan.md）
-- [ ] 相機標定：已實拍標定（0.71 px，10 月）→ **把 K/畸變填進 `configs/field.yaml`**
-- [x] `RealCamera`（含 GStreamer/CSI、`SharedCamera`）/ `SerialMCU` 實作完成；待接真硬體
+- [x] 相機定案 IMX296 + 6 mm、實拍標定 0.71 px → `field.yaml` 的 `camera_calib`（實機去畸變）與 `camera:`（模擬用同一組針孔內參）
+- [x] `IMX296Camera`（V4L2 + ISP + 去畸變，已在 Jetson 取像）/ `RealCamera` / `SharedCamera` / `SerialMCU` 實作完成；工具 `--camera cfg` 預設用 IMX296
+- [x] 手動操控的預估落點（`teleop/aim_preview.py`）：畫面標記 + 網板小地圖
 - [ ] Jetson Orin 部署：`tools/bench_pipeline.py --export-trt`（TensorRT FP16）實測延遲
 - [ ] 用**真實影像**微調 YOLO（`tools/capture_dataset.py` 預標註 → 從 6 m 合成模型微調）
 - [ ] 硬體在環 (HIL)：`mcu_link_test --allow-motion` → `run_autonomous --twin`（真轉塔+孿生）→ 整機

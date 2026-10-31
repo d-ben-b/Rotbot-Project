@@ -23,7 +23,9 @@
   main { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 14px; padding: 14px 16px; }
   @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
   .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
-  #video { width: 100%; aspect-ratio: 16 / 9; object-fit: contain; background: #000; border-radius: 8px; display: block; }
+  #video { width: 100%; aspect-ratio: 4 / 3; object-fit: contain; background: #000; border-radius: 8px; display: block; }
+  #pred { font-size: 20px; font-weight: 600; margin-top: 8px; }
+  #pred.in { color: var(--ok); } #pred.out { color: var(--warn); }
   #state { font-size: 28px; font-weight: 700; letter-spacing: .5px; }
   #state.AUTONOMOUS { color: var(--accent); } #state.MANUAL { color: var(--ok); }
   #state.ESTOP { color: var(--bad); } #state.FINISHED { color: var(--muted); }
@@ -58,6 +60,9 @@
 <main>
   <section>
     <img id="video" src="/video.mjpg" alt="機器人相機">
+    <div id="pred">預估落點：–</div>
+    <div class="muted" style="font-size:14px">畫面上的圈＝球會打到的地方（綠＝會進、橘＝不會進），右下角小圖＝整面網板。
+      依轉塔目前角度和飛輪轉速計算；準不準取決於出射速度有沒有實測過。</div>
     <div id="toast"></div>
   </section>
   <aside>
@@ -154,9 +159,26 @@ function render(m) {
     $("l-estop").className = "lamp" + (s.estop ? " bad" : "");
     $("l-wdog").className = "lamp" + (s.wdog ? " bad" : "");
   }
+  renderPreview(m.preview);
   $("jog").textContent = m.jog.map((v) => v.toFixed(0)).join(", ");
   $("fly").textContent = m.fly;
   if (m.last_error) toast(m.last_error);
+}
+
+function renderPreview(pv) {
+  const el = $("pred");
+  if (!pv) { el.textContent = "預估落點：–"; el.className = ""; return; }
+  let t;
+  if (!pv.ok) t = "預估落點：球到不了網板（角度或轉速太低）";
+  else {
+    const side = (v, pos, neg) => Math.abs(v) < 1 ? "" : `${v > 0 ? pos : neg} ${Math.abs(v).toFixed(0)} cm`;
+    const off = [side(pv.off_cm[0], "偏右", "偏左"), side(pv.off_cm[1], "偏上", "偏下")].filter(Boolean).join("、");
+    t = pv.inside ? `預估落點：✓ 會進「${pv.label}」` : `預估落點：✗ 不會進（最近的是「${pv.label}」）`;
+    if (off) t += `，離孔心${off}`;
+  }
+  if (!pv.fly_on) t += `（飛輪沒開，先用 ${preset} rpm 估）`;
+  el.textContent = t;
+  el.className = pv.ok && pv.inside ? "in" : "out";
 }
 
 // ── 鍵盤 ─────────────────────────────────────────

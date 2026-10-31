@@ -168,8 +168,9 @@ def _cam(fx: float, w: int, h: int) -> CameraConfig:
 
 def section_e(cfg: Config, n_scenes: int) -> dict:
     """完美偵測（rim 加像素雜訊 → bbox）→ localize_holes：統計每孔 (距離, 方位, 俯仰) 誤差。"""
-    cams = {"webcam 1080p fx1400 (placeholder)": _cam(1400.0, 1920, 1080),
-            "AR0234 + 6mm fx2000 (1920x1200)": _cam(2000.0, 1920, 1200)}
+    c0 = cfg.camera                                  # 第一台＝設定檔的相機（2026-10-25 起為實機 IMX296 + 6mm）
+    cams = {f"設定檔 {c0.width}x{c0.height} f{c0.fx:.0f}": c0,
+            "舊佔位 webcam 1920x1080 f1400（對照）": _cam(1400.0, 1920, 1080)}
     ranges = {"2.5m (2.0-3.2)": (2.0, 3.2), "6m (5.5-6.5)": (5.5, 6.5)}
     out = []
     for cam_name, cam in cams.items():
@@ -234,12 +235,12 @@ def report_e(cfg, p, res, n_scenes) -> dict:
           f"{r['bearing_deg_p95']:.3f} | {r['elev_deg_med']:.3f} / {r['elev_deg_p95']:.3f} | "
           f"{r['main_px']:.0f} / {r['bonus_px']:.0f} |")
     base_e = next(r for r in e["rows"] if r["range"].startswith("6m") and r["sigma_px"] == 1.0
-                  and "fx1400" in r["camera"])
+                  and r["camera"].startswith("設定檔"))
     perc = dict(bias_d=base_e["dist_cm_sigma"] / 100,
                 bias_ang=max(base_e["bearing_deg_sigma"], base_e["elev_deg_sigma"]),
                 noise_d=0.01, noise_ang=0.1)
     res["perception_model"] = perc
-    p(f"\n→ 閉迴路感知誤差模型（6m、fx1400、σ=1px 的穩健標準差）：系統偏差 距離 {perc['bias_d'] * 100:.1f} cm、"
+    p(f"\n→ 閉迴路感知誤差模型（6m、設定檔相機、σ=1px 的穩健標準差）：系統偏差 距離 {perc['bias_d'] * 100:.1f} cm、"
       f"角度 {perc['bias_ang']:.3f}°；逐幀雜訊（假設）距離 1 cm、角度 0.1°\n")
     return perc
 

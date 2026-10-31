@@ -4,10 +4,10 @@
 用法：
     # 電腦上（不需任何硬體）：韌體模擬器 + 合成相機，手機/另一台筆電連同一台路由器即可操控
     python -m tools.teleop_web --mcu sil --camera sim
-    # Orin：Arduino 接 USB、USB 相機
+    # Orin：Arduino 接 USB、機上相機（field.yaml 的 camera_hw：IMX296）
+    python -m tools.teleop_web --mcu /dev/ttyACM0 --camera cfg
+    # Orin：USB 相機
     python -m tools.teleop_web --mcu /dev/ttyACM0 --camera 0
-    # Orin：CSI 相機（GStreamer 管線字串）
-    python -m tools.teleop_web --mcu /dev/ttyACM0 --camera "nvarguscamerasrc ! video/x-raw(memory:NVMM),width=1920,height=1080,framerate=30/1 ! nvvidconv ! video/x-raw,format=BGRx ! videoconvert ! video/x-raw,format=BGR ! appsink drop=1"
     # 在家快速試手動：自主鎖定縮成 5 秒
     python -m tools.teleop_web --mcu sil --camera sim --auto-s 5
 
@@ -31,6 +31,7 @@ from aiohttp import web
 
 from rotbot.config import load_config
 from rotbot.pipeline.state_machine import MatchStateMachine
+from rotbot.teleop.aim_preview import AimPreview
 from rotbot.teleop.server import TeleopServer
 
 
@@ -72,14 +73,14 @@ def make_camera(spec: str, cfg, mcu=None):
             return TwinCamera(cfg, mcu, lit_bonus=1)
         from rotbot.sim.camera import SimCamera
         return SimCamera(cfg.camera, scene=_SimScene(cfg))
-    from rotbot.perception.camera import RealCamera
-    return RealCamera(cfg.camera, device=int(spec) if spec.isdigit() else spec)
+    from rotbot.perception.camera import open_camera
+    return open_camera(spec, cfg)
 
 
 def main():
     ap = argparse.ArgumentParser(description="Rotbot 手動操控 Web 伺服器")
     ap.add_argument("--mcu", default="sil", help="sil / none / COM5 / /dev/ttyACM0 / socket://host:port")
-    ap.add_argument("--camera", default="sim", help="sim / none / 相機編號 / GStreamer 管線")
+    ap.add_argument("--camera", default="sim", help="sim / none / cfg（field.yaml 的 IMX296）/ USB 相機編號 / GStreamer 管線")
     ap.add_argument("--host", default="0.0.0.0", help="0.0.0.0 = 區網都能連；127.0.0.1 = 只允許 SSH 通道")
     ap.add_argument("--port", type=int, default=8080)
     ap.add_argument("--auto-s", type=float, default=60.0, help="強制自主秒數（規則 60）")
@@ -111,7 +112,7 @@ def main():
 
     server = TeleopServer(mcu=mcu, camera=camera,
                           sm=MatchStateMachine(auto_s=args.auto_s, match_s=args.match_s),
-                          rpm_preset=args.rpm)
+                          rpm_preset=args.rpm, preview=AimPreview(cfg))
     ssl_ctx = None
     scheme = "http"
     if args.tls_cert:

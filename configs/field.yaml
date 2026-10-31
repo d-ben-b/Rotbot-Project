@@ -30,6 +30,7 @@ launch:
   v0_model: 14.0  # 機器人「模型認定」的出射速度 (m/s)
   v0_real: 13.44  # 實際出射速度 (m/s) — 飛輪打滑約 4% 損失（硬體到位後量測覆蓋）
   v0_jitter: 0.20 # 逐發初速變異 (m/s, 1σ) — 6m 最敏感的硬體指標，需實測
+  rpm_model: 2400 # v0_model 對應的飛輪轉速 (rpm)；手動操控的預估落點用 v0 = v0_model × 轉速 / rpm_model
 
 air:              # 空氣阻力（真實世界）
   rho: 1.20       # 空氣密度 (kg/m^3)
@@ -53,13 +54,39 @@ calibration:      # 線上自適應校正演算法
   outlier_m: 0.60    # 誤差超過此值視為異常，不更新 (m)
   clamp_deg: 5.0     # 修正量上限 (deg)
 
-camera:           # 相機內參（範例值：1920x1080、水平 FOV≈69°；標定後覆蓋）
-  fx: 1400.0
-  fy: 1400.0
-  cx: 960.0
-  cy: 540.0
-  width: 1920
-  height: 1080
+camera:           # 模擬/合成影像用的相機模型 = 實機相機「去畸變後」的針孔內參（2026-10-25 起）
+                  # 數字取自下面 camera_calib 的輸出：fx=fy=out_f、主點同 cx/cy、解析度同 sensor。
+                  # 舊值 1920x1080、fx 1400（水平 69°）是相機定案前的佔位值。
+                  # 10/07 刻意不改，是因為 2.5 m 時 6mm 視角只看得到部分孔而認錯孔；6 m 時整面網框都在畫面內（掃視姿態四邊留 ≥ 218 px）。
+  fx: 1794.1
+  fy: 1794.1
+  cx: 777.7
+  cy: 578.9
+  width: 1456
+  height: 1088
+
+camera_calib:     # 實機相機標定（2026-10-07，IMX296 + 6mm 鏡頭）：兩批共 40 張合併，採用 39 張，RMS 0.71 px，四角畸變 129 px
+                  # 只有實機相機會讀：影像先去畸變，camera.intrinsics() 回傳去畸變後的針孔內參。
+                  # 上面的 camera: 與這裡的去畸變輸出一致（模擬看到的 = 實機去畸變後看到的）。
+                  # 換鏡頭或重新對焦後要重跑 tools/calibrate_camera.py 並覆蓋這段（camera: 也要跟著改）。
+  width: 1456
+  height: 1088
+  fx: 1922.6       # 鏡頭原始內參（含畸變）
+  fy: 1924.0
+  cx: 777.7
+  cy: 578.9
+  dist: [-0.50801, 0.26907, -0.00161, 0.00006, 0.0]   # k1, k2, p1, p2, k3
+  out_f: 1794.1    # 去畸變後影像的焦距（fx=fy）；視角 44.2°×33.7°
+
+camera_hw:        # 實體相機的擷取設定（只有實機會讀；模擬/合成資料不受影響）
+  backend: imx296       # imx296 = Raspberry Pi Global Shutter Camera（Jetson CSI）；webcam = USB 鏡頭
+  device: /dev/video0   # webcam 時填裝置編號（如 "0"）
+  exposure_us: 8333     # 曝光 (µs)，15–15700。8333 在 60Hz 市電燈光下不閃；追高速球要縮到約 250（1/4000s）
+  gain_db: 0.0          # 類比增益 (dB)，0–48。每 +6dB 亮度加倍、雜訊也變多；先開大光圈再加 gain
+  wb_r: 3.05            # 白平衡增益（相對綠色）。預設＝sensor 標定資料 4640K；現場用
+  wb_b: 1.85            #   tools/camera_check.py --auto-wb 對著白紙量一次再覆蓋
+  ccm: true             # 套用色彩校正矩陣：顏色較準（紅色 LED 較飽和），但較慢
+  undistort_interp: nearest   # 去畸變的內插：nearest（約 3 ms）| linear（約 18 ms，邊緣較平滑）
 
 camera_mount:     # 相機相對「發射點」的外參（⚠️ 全 0=相機在發射口且對齊，待實機標定 P5）
   dx: 0.0         # 右 (m)

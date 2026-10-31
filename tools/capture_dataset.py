@@ -5,7 +5,7 @@
 並用目前的合成模型自動預標註（YOLO 格式）；人工只需用 labelImg / CVAT / Roboflow 修正錯框。
 之後以合成模型為起點微調（約 100~300 張、20~30 epochs，RTX 4050 幾分鐘）：
 
-    python -m tools.capture_dataset --camera 0 --n 200 --every 0.5 --out datasets/real/practice1
+    python -m tools.capture_dataset --n 200 --every 0.5 --out datasets/real/practice1
     python -m tools.train_detector --data datasets/real/practice1/dataset.yaml \\
         --model models/grid_holes_yolo11n.pt --epochs 30 --name finetune_real
 
@@ -24,14 +24,14 @@ if __package__ in (None, ""):
 import cv2
 
 from rotbot.config import load_config
-from rotbot.perception.camera import RealCamera
+from rotbot.perception.camera import open_camera
 
 CLASS_NAMES = {0: "main", 1: "bonus", 2: "bonus_lit"}
 
 
 def main():
     ap = argparse.ArgumentParser(description="實拍資料收集 + 預標註")
-    ap.add_argument("--camera", default="0", help="相機編號或 GStreamer 管線")
+    ap.add_argument("--camera", default="cfg", help="cfg = field.yaml 的 camera_hw（IMX296）/ USB 相機編號 / GStreamer 管線")
     ap.add_argument("--n", type=int, default=100, help="張數")
     ap.add_argument("--every", type=float, default=0.5, help="每幾秒存一張")
     ap.add_argument("--out", required=True)
@@ -43,7 +43,7 @@ def main():
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
     cfg = load_config()
-    cam = RealCamera(cfg.camera, device=int(args.camera) if args.camera.isdigit() else args.camera)
+    cam = open_camera(args.camera, cfg)
     model = None
     if args.prelabel:
         from ultralytics import YOLO

@@ -5,7 +5,7 @@
       規則禁止場館外遙控 → 只在區網內；場館不提供 Wi‑Fi → 自備路由器（見 docs/teleop_network.md）。
 路由：
   GET /            控制頁（static/index.html）
-  GET /video.mjpg  相機 MJPEG 串流（準星 + 狀態 HUD）
+  GET /video.mjpg  相機 MJPEG 串流（預估落點標記 + 網板小地圖 + 狀態 HUD）
   GET /api/state   目前狀態 JSON（除錯用）
   WS  /ws          控制：瀏覽器 20 Hz 送輸入、伺服器 10 Hz 推狀態、ping/pong 量延遲
 安全：
@@ -85,10 +85,12 @@ class FrameSource:
                 cv2.putText(img, "NO CAMERA", (330, 280), cv2.FONT_HERSHEY_SIMPLEX, 1.4,
                             (120, 120, 120), 2, cv2.LINE_AA)
             h, w = img.shape[:2]
+            scale = 1.0
             if w > self.width:
-                img = cv2.resize(img, (self.width, int(h * self.width / w)), interpolation=cv2.INTER_AREA)
+                scale = self.width / w
+                img = cv2.resize(img, (self.width, int(h * scale)), interpolation=cv2.INTER_AREA)
             if self.hud:
-                self.hud(img)
+                self.hud(img, scale)
             ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 70])
             if ok:
                 self.jpeg = buf.tobytes()
@@ -99,8 +101,10 @@ class FrameSource:
 class TeleopServer:
     def __init__(self, mcu=None, camera=None, sm: MatchStateMachine | None = None,
                  deadman_s: float = 0.3, rpm_preset: int = 2400, max_dps: float = 60.0,
-                 jog_refresh_s: float = 0.2, video_fps: float = 15.0):
+                 jog_refresh_s: float = 0.2, video_fps: float = 15.0, preview=None):
         self.mcu = mcu                      # SerialMCU（或測試替身）；None = 乾跑
+        self.preview = preview              # AimPreview：預估落點（None = 不顯示）
+        self._K, self._K_tried = None, False
         self.sm = sm or MatchStateMachine()
         self.deadman_s, self.rpm_preset, self.max_dps = deadman_s, rpm_preset, max_dps
         self.jog_refresh_s = jog_refresh_s
@@ -161,15 +165,46 @@ class TeleopServer:
             mcu_rtt_ms=round(statistics.median(rtt), 2) if rtt else None,
             cmd_ms=round(statistics.median(list(self.cmd_ms)[-50:]), 2) if self.cmd_ms else None,
             jog=self.last_jog, fly=self.last_fly, rpm_preset=self.rpm_preset, max_dps=self.max_dps,
-            last_error=self.last_error, video_frames=self.frames.frames)
+            last_error=self.last_error, video_frames=self.frames.frames, preview=self._preview_info())
 
-    def _draw_hud(self, img):
+    # ── 預估落點 ─────────────────────────────────────
+    def _intrinsics(self):
+        """相機內參（第一次用時取一次）；沒有相機或還沒標定就是 None（只顯示小地圖與文字）。"""
+        if not self._K_tried:
+            self._K_tried = True
+            cam = self.frames.camera
+            try:
+                self._K = None if cam is None else np.asarray(cam.intrinsics(), float)
+            except Exception:
+                self._K = None
+        return self._K
+
+    def _predict(self):
+        """依 MCU 回報的轉塔角度與飛輪目標轉速算預估落點；飛輪沒開時用預設轉速估。"""
+        s = getattr(self.mcu, "status", None) if self.mcu is not None else None
+        if self.preview is None or s is None:
+            return None, False
+        fly_on = s.rpm_target > 0
+        try:
+            pv = self.preview.predict(s.pitch_deg, s.yaw_deg, s.rpm_target if fly_on else self.rpm_preset,
+                                      self._intrinsics())
+        except Exception:
+            return None, fly_on
+        return pv, fly_on
+
+    def _preview_info(self) -> dict | None:
+        if self.preview is None or getattr(self.mcu, "status", None) is None:
+            return None
+        pv, fly_on = self._predict()
+        if pv is None:
+            return dict(ok=False, fly_on=fly_on)
+        return dict(ok=True, fly_on=fly_on, hole=pv.hole, label=pv.label, inside=bool(pv.inside),
+                    off_cm=[round(float(v), 1) for v in pv.off_cm],
+                    z=round(float(pv.z), 3), y=round(float(pv.y), 3), v0=round(float(pv.v0), 2), rpm=pv.rpm)
+
+    def _draw_hud(self, img, scale: float = 1.0):
         import cv2
         h, w = img.shape[:2]
-        cx, cy = w // 2, h // 2
-        cv2.line(img, (cx - 25, cy), (cx + 25, cy), (0, 220, 255), 1, cv2.LINE_AA)
-        cv2.line(img, (cx, cy - 25), (cx, cy + 25), (0, 220, 255), 1, cv2.LINE_AA)
-        cv2.circle(img, (cx, cy), 12, (0, 220, 255), 1, cv2.LINE_AA)
         st = self.sm.state.value
         txt = f"{st}  t={self.sm.elapsed:5.1f}s"
         s = getattr(self.mcu, "status", None) if self.mcu is not None else None
@@ -177,6 +212,8 @@ class TeleopServer:
             txt += f"  P {s.pitch_deg:6.2f}  Y {s.yaw_deg:6.2f}  {s.rpm_target}rpm"
             if s.ready:
                 txt += "  READY"
+        if self.preview is not None and s is not None:     # 畫面中央不再畫準星：它是相機正前方，不是落點
+            self.preview.draw(img, self._predict()[0], scale)
         cv2.rectangle(img, (0, 0), (w, 26), (0, 0, 0), -1)
         cv2.putText(img, txt, (8, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (230, 230, 230), 1, cv2.LINE_AA)
 

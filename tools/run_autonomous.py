@@ -7,7 +7,7 @@
     # 只有 Arduino + 馬達（還沒有發射機構/相機）：轉塔真的會動，影像與計分仍用孿生
     python -m tools.run_autonomous --mcu COM5 --twin
     # 實機（Orin）：真相機 + YOLO + Arduino；沒有落點回授時線上校正不更新（用賽前練習存的手感）
-    python -m tools.run_autonomous --mcu /dev/ttyACM0 --camera 0 --calib runs/calib/practice.json
+    python -m tools.run_autonomous --mcu /dev/ttyACM0 --calib runs/calib/practice.json
 
 結果另存 runs/autonomous/<時間>.json（逐球：目標、指令、各階段耗時、誤差、命中）。
 """
@@ -37,7 +37,7 @@ def main():
     ap.add_argument("--sim", action="store_true", help="韌體模擬器 + 數位孿生（不需任何硬體）")
     ap.add_argument("--mcu", help="COM5 / /dev/ttyACM0 / socket://…（--sim 時自動啟動模擬器）")
     ap.add_argument("--twin", action="store_true", help="影像與計分用數位孿生（接真 Arduino 測轉塔時用）")
-    ap.add_argument("--camera", default="0", help="真相機編號或 GStreamer 管線（非孿生時）")
+    ap.add_argument("--camera", default="cfg", help="非孿生時：cfg = field.yaml 的 camera_hw（IMX296）/ USB 相機編號 / GStreamer 管線")
     ap.add_argument("--detector", choices=["perfect", "yolo"], default="perfect",
                     help="孿生時：perfect=讀真值、yolo=真模型看合成影像；實機一律 yolo")
     ap.add_argument("--weights", default=str(REPO_ROOT / "models" / "grid_holes_yolo11n.pt"))
@@ -82,9 +82,9 @@ def main():
                 detector = TwinDetector(camera, noise_px=0.5, rng=np.random.default_rng(args.seed))
             observe = TwinImpactObserver(cfg, np.random.default_rng(args.seed + 1))
         else:
-            from rotbot.perception.camera import RealCamera
+            from rotbot.perception.camera import open_camera
             from rotbot.perception.detector import YoloDetector
-            camera = RealCamera(cfg.camera, device=int(args.camera) if args.camera.isdigit() else args.camera)
+            camera = open_camera(args.camera, cfg)
             detector = YoloDetector(args.weights)
 
         calib = None

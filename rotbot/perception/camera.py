@@ -7,8 +7,26 @@ import time
 
 import numpy as np
 
-from ..config import CameraConfig
+from ..config import CameraConfig, Config
 from ..hal import Camera
+
+
+def make_camera(cfg: Config) -> Camera:
+    """依 configs/field.yaml 的 camera_hw.backend 建立實體相機。"""
+    hw = cfg.camera_hw
+    if hw.backend == "imx296":
+        from .imx296 import IMX296Camera   # 局部 import：沒用到就不載入 V4L2 那一包
+        return IMX296Camera(cfg.camera, hw, cfg.camera_calib)
+    if hw.backend == "webcam":
+        return RealCamera(cfg.camera, device=int(hw.device) if hw.device.isdigit() else 0)
+    raise ValueError(f"未知的 camera_hw.backend: {hw.backend!r}（可用：imx296 / webcam）")
+
+
+def open_camera(spec: str, cfg: Config) -> Camera:
+    """工具的 --camera 參數：cfg = 依 field.yaml 的 camera_hw（目前 IMX296）；數字 = USB 相機；含 '!' = GStreamer 管線。"""
+    if spec == "cfg":
+        return make_camera(cfg)
+    return RealCamera(cfg.camera, device=int(spec) if spec.isdigit() else spec)
 
 
 class RealCamera(Camera):
