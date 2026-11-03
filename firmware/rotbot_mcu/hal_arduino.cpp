@@ -63,10 +63,10 @@ void ArduinoHal::step(uint8_t axis, bool forward) {
   if (forward != last_dir_[axis]) {
     digitalWrite(dp, level ? HIGH : LOW);
     last_dir_[axis] = forward;
-    delayMicroseconds(2);                      // DIR 建立時間
+    delayMicroseconds(DIR_SETUP_US);           // DIR 建立時間
   }
   digitalWrite(sp, HIGH);
-  delayMicroseconds(2);                        // TMC2209 STEP 脈寬 >= 100 ns
+  delayMicroseconds(STEP_PULSE_US);
   digitalWrite(sp, LOW);
 }
 
