@@ -35,7 +35,16 @@
 3. Orin 防火牆：`sudo ufw allow 8080/tcp`（有開 ufw 時）；SSH 已開（`sudo systemctl enable --now ssh`）。
 4. 啟動（之後可做成 systemd 開機自動跑）：
    `python -m tools.teleop_web --mcu /dev/ttyACM0 --camera cfg`（`cfg` = `field.yaml` 的機上相機 IMX296；USB 相機給編號）。
-5. 備案：不帶路由器時可讓 Orin 自己當熱點：`nmcli dev wifi hotspot ifname wlan0 ssid rotbot password <密碼>`。
+5. 備案：不帶路由器時可讓 Orin 自己當熱點：`nmcli dev wifi hotspot ifname wlP1p1s0 ssid rotbot password <密碼>`。
+
+**2026-11-04 實際設定**（密碼不寫在 repo）：
+
+- 路由器 ASUS RT-AX1800HP，管理頁 `http://www.asusrouter.com`（= 192.168.50.1）。同一時間只能一個人登入，改完要按「登出」。
+- WPA2 已設密碼；Orin 用「手動指定 IP 的 DHCP 列表」綁 MAC `58:02:05:bd:b8:9f` → **192.168.50.10**。
+- Orin 的無線網卡叫 `wlP1p1s0`（不是 `wlan0`），有線是 `enP8p1s0`；登入帳號 `ben-orin`。
+- 沒有螢幕時：Orin 的 USB-C 接電腦，`ssh ben-orin@192.168.55.1`（Jetson 的 USB 網路，不需要路由器）。
+- 連 Wi-Fi：`sudo nmcli dev wifi connect "<SSID>" password "<密碼>" ifname wlP1p1s0`；
+  改了路由器 SSID / 密碼要先 `sudo nmcli con delete "<舊SSID>"` 再連。綁好 IP 後 `nmcli con down/up` 才會拿到新 IP。
 
 ## 4. 操作手筆電
 
