@@ -366,6 +366,10 @@ class SerialMCU(ActuatorLink):
         """四輪輸出軸 rpm（編碼器量測）。"""
         return self.request("WHL").wheels
 
+    def encoder_raw(self) -> tuple[tuple[int, int, int, int], int]:
+        """除錯：(四個計時器原始計數, A/B 腳位位元；bit 2i = Mi+1 的 A、2i+1 = B)。"""
+        return self.request("ENC").enc_raw
+
     def fire(self) -> None:
         self.request("FIRE")
 

@@ -154,6 +154,17 @@ int32_t ArduinoHal::wheelCount(uint8_t i) {
   enc_acc_[i] += inv ? -d : d;
   return enc_acc_[i];
 }
+
+uint16_t ArduinoHal::wheelRaw(uint8_t i) { return (uint16_t)__HAL_TIM_GET_COUNTER(g_enc[i]); }
+
+uint8_t ArduinoHal::wheelPins() {                // AF 模式下 IDR 仍反映腳位電位
+  uint8_t m = 0;
+  for (uint8_t i = 0; i < 4; ++i) {
+    if (digitalReadFast(kEncA[i])) m |= (uint8_t)(1 << (2 * i));
+    if (digitalReadFast(kEncB[i])) m |= (uint8_t)(1 << (2 * i + 1));
+  }
+  return m;
+}
 #endif
 
 float ArduinoHal::batteryVolts() {

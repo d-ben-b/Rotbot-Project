@@ -69,6 +69,16 @@ class SimHal : public Hal {
   void enableWheels(bool on) override { wheels_on_ = on; }
   void setWheel(uint8_t i, int16_t duty) override { wheel_duty_[i] = duty; }
   int32_t wheelCount(uint8_t i) override { return (int32_t)std::floor(wheel_counts_[i]); }
+  uint16_t wheelRaw(uint8_t i) override { return (uint16_t)wheelCount(i); }
+  uint8_t wheelPins() override {                                    // 正交訊號：計數每 +1 依序 00→10→11→01
+    uint8_t m = 0;
+    for (uint8_t i = 0; i < 4; ++i) {
+      int ph = ((wheelCount(i) % 4) + 4) % 4;
+      if (ph == 1 || ph == 2) m |= (uint8_t)(1 << (2 * i));
+      if (ph >= 2) m |= (uint8_t)(1 << (2 * i + 1));
+    }
+    return m;
+  }
 
   // 物理推進（每圈呼叫）
   void tick() {

@@ -23,4 +23,6 @@ class Hal {
   virtual void enableWheels(bool) {}                   // BTS7960 EN
   virtual void setWheel(uint8_t, int16_t) {}           // -1000..1000（千分比），正 = 前進
   virtual int32_t wheelCount(uint8_t) { return 0; }    // 編碼器累計計數（4 倍頻，正 = 前進）
+  virtual uint16_t wheelRaw(uint8_t) { return 0; }     // 除錯：計時器原始計數
+  virtual uint8_t wheelPins() { return 0; }            // 除錯：bit 2i = Mi+1 的 A、bit 2i+1 = B 目前電位
 };

@@ -88,3 +88,8 @@ def test_reboot_detected_from_status_without_boot_event():
 def test_wheel_reply_parsed():
     wh = P.parse_frame(P.decode_line(P.encode_line("WH", 7, 482, -15, 0, 1203)))
     assert wh.kind == "WH" and wh.seq == 7 and wh.wheels == (48.2, -1.5, 0.0, 120.3)
+
+
+def test_encoder_raw_reply_parsed():
+    er = P.parse_frame(P.decode_line(P.encode_line("ER", 3, 120, 0, 65535, 7, 0b00000110)))
+    assert er.kind == "ER" and er.enc_raw == ((120, 0, 65535, 7), 6)

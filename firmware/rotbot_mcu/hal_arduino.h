@@ -49,6 +49,8 @@ class ArduinoHal : public Hal {
   void enableWheels(bool on) override { digitalWrite(PIN_WHEEL_EN, on ? HIGH : LOW); }
   void setWheel(uint8_t i, int16_t duty) override;
   int32_t wheelCount(uint8_t i) override;
+  uint16_t wheelRaw(uint8_t i) override;
+  uint8_t wheelPins() override;
 #endif
 
  private:

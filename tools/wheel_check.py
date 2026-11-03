@@ -6,6 +6,8 @@
     python -m tools.wheel_check --port COM5
     # 只轉一顆輪子（車要架高）：看輪子有沒有轉、數字有沒有跟著變
     python -m tools.wheel_check --port COM5 --spin M1 --duty 0.4 --seconds 3
+    # 除錯：顯示編碼器 A/B 腳位電位（0/1）和計時器原始計數；手轉輪子時 A/B 會在 0、1 之間變
+    python -m tools.wheel_check --port COM5 --raw
 """
 from __future__ import annotations
 
@@ -28,6 +30,7 @@ def main():
     ap.add_argument("--spin", choices=["M1", "M2", "M3", "M4"], help="只轉這一顆（不給 = 只讀編碼器）")
     ap.add_argument("--duty", type=float, default=0.4, help="輸出比例 -1..1（負 = 往後）")
     ap.add_argument("--seconds", type=float, default=20.0, help="持續時間；--spin 時建議 3")
+    ap.add_argument("--raw", action="store_true", help="除錯：顯示 A/B 腳位電位與計時器原始計數")
     args = ap.parse_args()
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -38,6 +41,8 @@ def main():
         print(f"轉 {NAMES[int(args.spin[1]) - 1]}，輸出 {w[int(args.spin[1]) - 1]:+.0%}，{args.seconds:.0f} 秒")
     else:
         print(f"只讀編碼器 {args.seconds:.0f} 秒：用手轉輪子，看數字（輸出軸 rpm）")
+    if args.raw:
+        print("    每顆輪子：A B 腳位電位 / 計時器原始計數")
     print("    " + "  ".join(f"{n:>8}" for n in NAMES))
     with SerialMCU(args.port) as mcu:
         st = mcu.get_status()
@@ -48,8 +53,13 @@ def main():
             while time.monotonic() < end:
                 if args.spin:
                     mcu.drive(*w)                      # 要持續送，MCU 0.5 s 沒收到就停
-                rpm = mcu.wheels()
-                print("    " + "  ".join(f"{r:8.1f}" for r in rpm), flush=True)
+                if args.raw:
+                    raw, pins = mcu.encoder_raw()
+                    cells = [f"{pins >> (2 * i) & 1} {pins >> (2 * i + 1) & 1} /{raw[i]:5d}" for i in range(4)]
+                    print("    " + "  ".join(f"{c:>8}" for c in cells), flush=True)
+                else:
+                    rpm = mcu.wheels()
+                    print("    " + "  ".join(f"{r:8.1f}" for r in rpm), flush=True)
                 time.sleep(0.2)
         finally:
             mcu.drive(0, 0, 0, 0)

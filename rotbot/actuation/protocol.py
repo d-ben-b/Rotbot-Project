@@ -21,6 +21,7 @@ FIRE 因 ACK 遺失而重送時不會連發兩球。
   STOP                      停止 JOG、飛輪、車輪 ACK
   DRIVE,m1,m2,m3,m4         四輪輸出（千分比）  ACK / NAK（需持續送，DRIVE_TIMEOUT_MS 沒收到就停）
   WHL                       四輪轉速           WH,seq,rpm10_1,rpm10_2,rpm10_3,rpm10_4（輸出軸 rpm × 10）
+  ENC                       除錯：編碼器原始值  ER,seq,raw1,raw2,raw3,raw4,pins（pins bit 2i = Mi+1 的 A、2i+1 = B）
   ZERO,pitch_cdeg,yaw_cdeg  宣告目前姿態角度   ACK（AIM 前必須先 ZERO）
 事件（MCU → Orin）：EV,evseq,NAME,arg   NAME ∈ BOOT/READY/FIRED/WDOG/ESTOP/FAULT
 規格全文見 docs/mcu_orin_link.md；MCU 端實作見 firmware/rotbot_mcu/。
@@ -143,6 +144,7 @@ class Reply:
     status: Status | None = None
     pong: tuple[int, int, int] | None = None    # (proto, fw, uptime_ms)
     wheels: tuple[float, float, float, float] | None = None   # 四輪輸出軸 rpm（M1 左前、M2 左後、M3 右前、M4 右後）
+    enc_raw: tuple[tuple[int, int, int, int], int] | None = None   # 除錯：(四個計時器原始計數, A/B 腳位位元)
 
 
 def parse_frame(fields: list[str]) -> Reply | Event:
@@ -160,6 +162,8 @@ def parse_frame(fields: list[str]) -> Reply | Event:
             return Reply(kind, n[0], status=st)
         if kind == "WH" and len(fields) == 6:
             return Reply(kind, n[0], wheels=tuple(v / 10 for v in n[1:5]))
+        if kind == "ER" and len(fields) == 7:
+            return Reply(kind, n[0], enc_raw=(tuple(n[1:5]), n[5]))
         if kind == "EV" and len(fields) == 4:
             return Event(int(fields[1]), fields[2], int(fields[3]))
     except (IndexError, ValueError) as e:

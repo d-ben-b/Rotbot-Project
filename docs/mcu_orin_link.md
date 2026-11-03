@@ -57,6 +57,7 @@ Jetson Orin (Python)                         NUCLEO-G474RE (C++，STM32duino)
 | `STOP` | – | `ACK` | JOG 歸零、飛輪停、車輪停（位置保持） |
 | `DRIVE` | m1, m2, m3, m4（千分比 ±1000） | `ACK` / `NAK` | 四輪輸出（M1 左前、M2 左後、M3 右前、M4 右後；正 = 前進）。變化率限制 `WHEEL_SLEW_PER_S`；**`DRIVE_TIMEOUT_MS`（0.5 s）沒收到就停** |
 | `WHL` | – | `WH,seq,rpm10×4` | 四輪輸出軸轉速 × 10（編碼器，每 100 ms 更新） |
+| `ENC` | – | `ER,seq,raw×4,pins` | 除錯：四個計時器原始計數、A/B 腳位電位（bit 2i = Mi+1 的 A、2i+1 = B） |
 
 | 事件（MCU → Orin） `EV,evseq,NAME,arg` | 何時 |
 |---|---|

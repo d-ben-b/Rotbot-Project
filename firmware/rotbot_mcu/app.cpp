@@ -268,6 +268,12 @@ void App::handleLine(char* line) {
     snprintf(body, sizeof(body), "WH,%u,%d,%d,%d,%d", (unsigned)seq, (int)wheel_rpm10_[0],
              (int)wheel_rpm10_[1], (int)wheel_rpm10_[2], (int)wheel_rpm10_[3]);
     reply(body);
+  } else if (!strcmp(cmd, "ENC")) {             // 除錯：四輪編碼器原始計數 + A/B 腳位電位
+    if (nargs != 0) { sendAck(seq, proto::E_FORMAT); return; }
+    snprintf(body, sizeof(body), "ER,%u,%u,%u,%u,%u,%u", (unsigned)seq, (unsigned)hal_.wheelRaw(0),
+             (unsigned)hal_.wheelRaw(1), (unsigned)hal_.wheelRaw(2), (unsigned)hal_.wheelRaw(3),
+             (unsigned)hal_.wheelPins());
+    reply(body);
   } else if (!strcmp(cmd, "STOP")) {
     if (nargs != 0) { sendAck(seq, proto::E_FORMAT); return; }
     pitch_.jog = yaw_.jog = true;                 // 速度模式 + 目標速度 0 → 減速停在原地
