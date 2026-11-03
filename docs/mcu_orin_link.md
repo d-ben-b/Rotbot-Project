@@ -129,7 +129,7 @@ STAT 旗標：0x01 READY、0x02 MOVING、0x04 FLY_OK、0x08 FIRING、0x10 ESTOP�
 | L6 | 整機 | `python -m tools.run_autonomous --mcu /dev/ttyACM0`（相機預設用 IMX296） | 真相機 + YOLO + 真投球 |
 
 燒錄：Arduino IDE 開 `firmware/rotbot_mcu/rotbot_mcu.ino` 上傳（步驟見 00_todo.md）；或
-`arduino-cli compile --upload -p COM7 --fqbn STMicroelectronics:stm32:Nucleo_64:pnum=NUCLEO_G474RE firmware/rotbot_mcu`。
+`arduino-cli compile --upload -p COM5 --fqbn STMicroelectronics:stm32:Nucleo_64:pnum=NUCLEO_G474RE firmware/rotbot_mcu`。
 手動除錯：序列埠監控視窗 115200、換行 LF，直接打 `PING,0`、`STAT,0`、`ZERO,0,0,0`、`AIM,0,1000,0`（SEQ 0 = 不去重）。
 
 ## 6. Orin 端設定與常見問題

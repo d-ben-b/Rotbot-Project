@@ -20,7 +20,7 @@
    - 「工具 → 開發板 → STM32 MCU based boards」選 **Nucleo-64**。
    - 「工具 → Board part number」選 **Nucleo G474RE**。
    - 其他選項維持預設，上傳方式是 Mass Storage，不用另外裝軟體。
-   - 「工具 → 連接埠」選 STMicroelectronics STLink Virtual COM Port 那個（例如 COM7）。COM5 NOW
+   - 「工具 → 連接埠」選 STMicroelectronics STLink Virtual COM Port 那個（這台電腦目前是 COM5；換電腦或換 USB 孔可能會變）。
      裝置管理員裡沒有這個 COM 埠的話，安裝 ST 的 ST-LINK 驅動（STSW-LINK009）。
 5. 按左上角的「→」上傳。
    - ✅ 沒有紅色錯誤訊息，程式大小約 33 KB（6%）。
@@ -43,7 +43,7 @@
 8. **關掉序列埠監控視窗**，按一下 RESET，然後在終端機執行：
 
    ```bash
-   python -m tools.mcu_link_test --port COM7
+   python -m tools.mcu_link_test --port COM5
    ```
 
    - ✅ 最後一行 `FAIL 0`，PASS 大約 11 項。
@@ -128,7 +128,7 @@ Nucleo 有兩種排針：
 - **第一次接馬達時**，飛輪不要放球，發射口前面不要站人，然後執行：
 
   ```bash
-  python -m tools.mcu_link_test --port COM7 --allow-motion
+  python -m tools.mcu_link_test --port COM5 --allow-motion
   ```
 
   - ✅ 結果是 `FAIL 0`。

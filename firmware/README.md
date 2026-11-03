@@ -14,7 +14,7 @@
 ## 燒錄
 
 - Arduino IDE：裝 STM32duino 核心（STM32 MCU based boards），開 `rotbot_mcu/rotbot_mcu.ino`，板子選 Nucleo-64 → Board part number「Nucleo G474RE」，上傳（Mass Storage）。逐步說明見 [docs/00_todo.md](../docs/00_todo.md)。
-- arduino-cli：`arduino-cli compile --upload -p COM7 --fqbn STMicroelectronics:stm32:Nucleo_64:pnum=NUCLEO_G474RE firmware/rotbot_mcu`
+- arduino-cli：`arduino-cli compile --upload -p COM5 --fqbn STMicroelectronics:stm32:Nucleo_64:pnum=NUCLEO_G474RE firmware/rotbot_mcu`
 - Nucleo 的 I/O 是 3.3 V；電池分壓要配合 `VBAT_ADC_VREF`（量 CN5 第 8 腳 VREFP）。
 - 選配感測裝好後在 `config.h` 打開：`FLY_HAS_TACH`、`VBAT_ENABLED`、`FEED_HAS_HOME_SWITCH`、`ESTOP_SENSE_ENABLED`。
 
@@ -25,7 +25,7 @@ Uno（avr-gcc 7.3）：13.1 KB（40%）、667 B（32%）。
 
 ```bash
 python -m tools.mcu_link_test --sil                       # 電腦上：建置並啟動模擬器，跑全部測試
-python -m tools.mcu_link_test --port COM7                 # Nucleo 接電腦：只測通訊（不動馬達）
+python -m tools.mcu_link_test --port COM5                 # Nucleo 接電腦：只測通訊（不動馬達）
 python -m tools.mcu_link_test --port /dev/ttyACM0 --allow-motion   # Orin + Nucleo + 馬達
 ```
 

@@ -44,9 +44,9 @@
 | --- | --- | --- |
 | 韌體能在 G474RE 上編譯 | Arduino IDE 選 Nucleo-64 / Nucleo G474RE 後按「✓」驗證 | 約 33 KB（6%），沒有錯誤 |
 | MCU 收得到、回得對 | 序列埠監控視窗（115200、Newline）按 RESET 後打 `PING,0` | 先看到 `EV,1,BOOT,1*91`，再回 `PONG,0,1,1,…` |
-| 通訊沒問題（不動馬達） | 先關掉監控視窗、按 RESET，再跑 `python -m tools.mcu_link_test --port COM7` | `FAIL 0`，PASS 約 11 項（開機訊息那項 SKIP 是正常的） |
+| 通訊沒問題（不動馬達） | 先關掉監控視窗、按 RESET，再跑 `python -m tools.mcu_link_test --port COM5` | `FAIL 0`，PASS 約 11 項（開機訊息那項 SKIP 是正常的） |
 | 馬達、飛輪、推球的指令都對 | 同上，加 `--allow-motion` | `FAIL 0`，PASS 約 17 項 |
-| 轉塔角度回報正確（接了馬達才測） | `python -m tools.teleop_web --mcu COM7 --camera none --auto-s 5`，網頁依序按「歸零」→「開始」→ 5 秒後「切手動」→ 按 W | 網頁上的俯仰角跟著變；用量角器量，實際角度差 < 0.5° |
+| 轉塔角度回報正確（接了馬達才測） | `python -m tools.teleop_web --mcu COM5 --camera none --auto-s 5`，網頁依序按「歸零」→「開始」→ 5 秒後「切手動」→ 按 W | 網頁上的俯仰角跟著變；用量角器量，實際角度差 < 0.5° |
 | MCU 重開機會自動補回（不接馬達也能測） | 同上一列，按 W 轉到俯仰約 10° 後放開，再按板子上黑色的 RESET | 1 秒內網頁上方出現紅色「MCU 重開機（第 1 次）：已用重開機前的角度補回歸零」，俯仰角和按 RESET 前一樣，「已歸零」燈亮著 |
 
 ## D. 只有實機能證明的事
