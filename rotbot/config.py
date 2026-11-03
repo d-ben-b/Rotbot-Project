@@ -153,6 +153,13 @@ class CameraMount:
 
 
 @dataclass(frozen=True)
+class ChassisConfig:
+    """底盤：手動操控時把（前後, 橫移, 旋轉）換成四輪輸出。"""
+    mecanum: bool = True             # 麥克納姆輪（X 型排列）；False = 一般輪差速（橫移無效）
+    strafe_invert: bool = False      # 實測橫移方向反了改 True
+
+
+@dataclass(frozen=True)
 class SimConfig:
     dt: float
     seed: int
@@ -173,6 +180,7 @@ class Config:
     aim: AimConfig = AimConfig()
     camera_hw: CameraHardwareConfig = dc_field(default_factory=CameraHardwareConfig)
     camera_calib: CameraCalibration | None = None    # 沒有 = 實機相機尚未標定
+    chassis: ChassisConfig = ChassisConfig()
 
     @property
     def k_drag(self) -> float:
@@ -232,4 +240,5 @@ def load_config(path: str | Path | None = None) -> Config:
         aim=AimConfig(**raw.get("aim", {})),
         camera_hw=CameraHardwareConfig(**raw.get("camera_hw", {})),
         camera_calib=CameraCalibration(**raw["camera_calib"]) if raw.get("camera_calib") else None,
+        chassis=ChassisConfig(**raw.get("chassis", {})),
     )

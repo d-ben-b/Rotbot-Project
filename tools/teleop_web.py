@@ -112,7 +112,7 @@ def main():
 
     server = TeleopServer(mcu=mcu, camera=camera,
                           sm=MatchStateMachine(auto_s=args.auto_s, match_s=args.match_s),
-                          rpm_preset=args.rpm, preview=AimPreview(cfg))
+                          rpm_preset=args.rpm, preview=AimPreview(cfg), chassis=cfg.chassis)
     ssl_ctx = None
     scheme = "http"
     if args.tls_cert:

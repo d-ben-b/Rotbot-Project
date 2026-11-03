@@ -32,6 +32,7 @@ from pathlib import Path
 import numpy as np
 from aiohttp import WSMsgType, web
 
+from ..config import ChassisConfig
 from ..pipeline.state_machine import GameState, MatchStateMachine
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -104,9 +105,10 @@ class FrameSource:
 class TeleopServer:
     def __init__(self, mcu=None, camera=None, sm: MatchStateMachine | None = None,
                  deadman_s: float = 0.3, rpm_preset: int = 2400, max_dps: float = 60.0,
-                 jog_refresh_s: float = 0.2, video_fps: float = 15.0, preview=None):
+                 jog_refresh_s: float = 0.2, video_fps: float = 15.0, preview=None, chassis=None):
         self.mcu = mcu                      # SerialMCU（或測試替身）；None = 乾跑
         self.preview = preview              # AimPreview：預估落點（None = 不顯示）
+        self.chassis = chassis or ChassisConfig()
         self._K, self._K_tried = None, False
         self.sm = sm or MatchStateMachine()
         self.deadman_s, self.rpm_preset, self.max_dps = deadman_s, rpm_preset, max_dps
@@ -115,7 +117,7 @@ class TeleopServer:
         self.driver: _Client | None = None
         self.last_jog = (0.0, 0.0)
         self.last_jog_t = 0.0
-        self.last_drive = (0.0, 0.0)        # (前進, 轉向) -1..1
+        self.last_drive = (0.0, 0.0, 0.0)   # (前進, 右移, 右轉) -1..1
         self.last_drive_t = 0.0
         self.last_fly = 0
         self.last_error = ""
@@ -144,7 +146,7 @@ class TeleopServer:
             return False
 
     async def _safe_stop(self, why: str):
-        self.last_jog, self.last_fly, self.last_drive = (0.0, 0.0), 0, (0.0, 0.0)   # STOP 也停車輪
+        self.last_jog, self.last_fly, self.last_drive = (0.0, 0.0), 0, (0.0, 0.0, 0.0)   # STOP 也停車輪
         await self._mcu("stop")
         self.last_error = self.last_error if self.last_error else ""
         self._log(f"STOP（{why}）")
@@ -291,8 +293,8 @@ class TeleopServer:
                 self.last_jog = (0.0, 0.0)
                 await self._mcu("jog", 0.0, 0.0)
                 self._log("deadman：駕駛輸入中斷 → JOG 歸零")
-            if stale and self.last_drive != (0.0, 0.0):
-                self.last_drive = (0.0, 0.0)
+            if stale and self.last_drive != (0.0, 0.0, 0.0):
+                self.last_drive = (0.0, 0.0, 0.0)
                 await self._mcu("drive", 0.0, 0.0, 0.0, 0.0)
                 self._log("deadman：駕駛輸入中斷 → 車輪停")
 
@@ -426,13 +428,10 @@ class TeleopServer:
             await self._mcu("jog", jp, jy)
         dv = m.get("drive")
         if dv is not None:
-            fwd, turn = (max(-1.0, min(1.0, float(v))) for v in dv)
-            if (fwd, turn) != self.last_drive or \
-                    ((fwd, turn) != (0.0, 0.0) and now - self.last_drive_t > self.jog_refresh_s):
-                self.last_drive, self.last_drive_t = (fwd, turn), now
-                left, right = fwd + turn, fwd - turn            # 差速：左側 M1/M2、右側 M3/M4
-                k = max(1.0, abs(left), abs(right))
-                await self._mcu("drive", left / k, left / k, right / k, right / k)
+            d = tuple(max(-1.0, min(1.0, float(v))) for v in (list(dv) + [0, 0, 0])[:3])   # (前進, 右移, 右轉)
+            if d != self.last_drive or (any(d) and now - self.last_drive_t > self.jog_refresh_s):
+                self.last_drive, self.last_drive_t = d, now
+                await self._mcu("drive", *self.mix(*d))
         fly = m.get("fly")
         if fly is not None:
             fly = int(max(0, min(4000, int(fly))))
@@ -444,6 +443,19 @@ class TeleopServer:
                 await self._notice(c, "發射！")
             else:
                 await self._notice(c, f"不能發射：{self.last_error}")
+
+    def mix(self, fwd: float, strafe: float, rot: float) -> tuple[float, float, float, float]:
+        """（前進, 右移, 右轉）→ 四輪輸出（M1 左前、M2 左後、M3 右前、M4 右後）。
+
+        麥克納姆輪 X 型排列：右移 = 左前、右後往前轉，左後、右前往後轉。一般輪時橫移無效（差速）。
+        """
+        if not self.chassis.mecanum:
+            strafe = 0.0
+        elif self.chassis.strafe_invert:
+            strafe = -strafe
+        w = (fwd + strafe + rot, fwd - strafe + rot, fwd - strafe - rot, fwd + strafe - rot)
+        k = max(1.0, *(abs(x) for x in w))
+        return tuple(x / k for x in w)
 
     # ── 組裝 ─────────────────────────────────────────
     def build_app(self) -> web.Application:

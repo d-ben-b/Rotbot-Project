@@ -211,7 +211,7 @@ def test_teleop_restores_zero_after_mcu_reboot():
 
 
 def test_teleop_drive_mixing_and_deadman():
-    """手動時方向鍵/左搖桿 → 差速四輪；自主期間不開車；輸入中斷 → 車輪停。"""
+    """手動時方向鍵/左搖桿 → 麥克納姆輪四輪輸出；自主期間不開車；輸入中斷 → 車輪停。"""
     class DriveMCU(FakeMCU):
         def drive(self, *w):
             self.calls.append(("drive", *w))
@@ -231,16 +231,28 @@ def test_teleop_drive_mixing_and_deadman():
                 await asyncio.sleep(0.3)
                 await ws.send_json({"t": "cmd", "name": "manual"})
                 await _wait(ws, lambda m: m["t"] == "state" and m["game"] == "MANUAL")
-                for drive, want in (([1, 0], (1, 1, 1, 1)), ([0, 1], (1, 1, -1, -1)),
-                                    ([1, 1], (1, 1, 0, 0))):
+                # (前進, 右移, 右轉) → (M1 左前, M2 左後, M3 右前, M4 右後)，麥克納姆輪 X 型
+                for drive, want in (([1, 0, 0], (1, 1, 1, 1)), ([0, 1, 0], (1, -1, -1, 1)),
+                                    ([0, 0, 1], (1, 1, -1, -1)), ([1, 1, 0], (1, 0, 0, 1))):
                     await ws.send_json({"t": "input", "jog": [0, 0], "drive": drive, "fly": 0})
                     await asyncio.sleep(0.05)
                     assert mcu.calls[-1] == ("drive", *want), mcu.calls[-1]
                 await asyncio.sleep(0.5)                                      # 停止送輸入 → deadman
                 assert mcu.calls[-1] == ("drive", 0.0, 0.0, 0.0, 0.0)
-                await _wait(ws, lambda m: m["t"] == "state" and m["drive"] == [0.0, 0.0])   # 網頁也顯示歸零
+                await _wait(ws, lambda m: m["t"] == "state" and m["drive"] == [0.0, 0.0, 0.0])   # 網頁也顯示歸零
                 await ws.close()
         finally:
             await runner.cleanup()
 
     asyncio.run(scenario())
+
+
+def test_chassis_mix_options():
+    """一般輪（差速）時橫移無效；strafe_invert 讓橫移反向；輸出超過 1 時等比例縮小。"""
+    from rotbot.config import ChassisConfig
+    tank = TeleopServer(chassis=ChassisConfig(mecanum=False))
+    assert tank.mix(0, 1, 0) == (0, 0, 0, 0)
+    assert tank.mix(1, 0, 1) == (1, 1, 0, 0)
+    inv = TeleopServer(chassis=ChassisConfig(strafe_invert=True))
+    assert inv.mix(0, 1, 0) == (-1, 1, 1, -1)
+    assert TeleopServer().mix(1, 1, 1) == (1, 1 / 3, -1 / 3, 1 / 3)
