@@ -18,8 +18,8 @@
 - Nucleo 的 I/O 是 3.3 V；電池分壓要配合 `VBAT_ADC_VREF`（量 CN5 第 8 腳 VREFP）。
 - 選配感測裝好後在 `config.h` 打開：`FLY_HAS_TACH`、`VBAT_ENABLED`、`FEED_HAS_HOME_SWITCH`、`ESTOP_SENSE_ENABLED`。
 
-資源（STM32duino 3.0.0 / arm-none-eabi-gcc 14.2）：G474RE 出廠設定 33.3 KB flash（6%）、1.8 KB RAM（1%）；全感測 40.3 KB（7%）、1.9 KB（1%）。
-Uno（avr-gcc 7.3）：13.1 KB（40%）、667 B（32%）。
+資源（STM32duino 3.0.0 / arm-none-eabi-gcc 14.2，2026-11-03 加車輪後）：G474RE 出廠設定 35.1 KB flash（6%）、2.0 KB RAM（1%）；全感測 42.0 KB（8%）、2.0 KB（1%）。
+Uno（avr-gcc 7.3，沒有車輪）：14.8 KB（45%）、765 B（37%）。
 
 ## 測試
 
@@ -27,6 +27,7 @@ Uno（avr-gcc 7.3）：13.1 KB（40%）、667 B（32%）。
 python -m tools.mcu_link_test --sil                       # 電腦上：建置並啟動模擬器，跑全部測試
 python -m tools.mcu_link_test --port COM5                 # Nucleo 接電腦：只測通訊（不動馬達）
 python -m tools.mcu_link_test --port /dev/ttyACM0 --allow-motion   # Orin + Nucleo + 馬達
+python -m tools.mcu_link_test --port COM5 --allow-drive   # 車架高後測四個車輪
 ```
 
 序列埠監控視窗（115200、換行 LF；Nucleo 開埠不重開機，按黑色 RESET 才看得到 `EV,1,BOOT`）可直接手打：`PING,0`、`STAT,0`、`ZERO,0,0,0`、`AIM,0,1500,0`、`FLY,0,2400`、`FIRE,0`、`STOP,0`。

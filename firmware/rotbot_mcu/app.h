@@ -44,6 +44,8 @@ class App {
   void enterSafe();
   void updateFlywheel(uint32_t now, float dt);
   void updateFeeder(uint32_t now);
+  void updateWheels(uint32_t now, float dt);
+  void stopWheels();           // 目標與輸出立刻歸 0（煞車）
 
   Hal& hal_;
   proto::LineReader reader_;
@@ -60,6 +62,13 @@ class App {
   bool firing_ = false, feed_left_home_ = false;
   uint32_t fire_start_ms_ = 0;
   uint16_t shots_ = 0;
+  // 車輪
+  int16_t wheel_target_[4] = {0, 0, 0, 0};   // 千分比
+  float wheel_duty_[4] = {0, 0, 0, 0};       // 經過變化率限制的輸出
+  int16_t wheel_out_[4] = {0, 0, 0, 0};      // 上次送給 Hal 的值
+  int32_t wheel_count_[4] = {0, 0, 0, 0};
+  int16_t wheel_rpm10_[4] = {0, 0, 0, 0};    // 輸出軸轉速 × 10
+  uint32_t drive_rx_ms_ = 0, wheel_rpm_ms_ = 0;
   // 協定狀態
   uint8_t last_err_ = 0;
   uint16_t crc_errors_ = 0, evseq_ = 0;

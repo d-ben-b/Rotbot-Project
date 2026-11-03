@@ -18,7 +18,9 @@ FIRE 因 ACK 遺失而重送時不會連發兩球。
   FLY,rpm                   飛輪目標轉速(0=停) ACK / NAK
   FIRE                      到位+到速才推一球  ACK（之後送 EV FIRED）/ NAK
   JOG,pitch_cdps,yaw_cdps   手動速度模式       ACK / NAK（需持續有指令，否則看門狗停）
-  STOP                      停止 JOG、飛輪停   ACK
+  STOP                      停止 JOG、飛輪、車輪 ACK
+  DRIVE,m1,m2,m3,m4         四輪輸出（千分比）  ACK / NAK（需持續送，DRIVE_TIMEOUT_MS 沒收到就停）
+  WHL                       四輪轉速           WH,seq,rpm10_1,rpm10_2,rpm10_3,rpm10_4（輸出軸 rpm × 10）
   ZERO,pitch_cdeg,yaw_cdeg  宣告目前姿態角度   ACK（AIM 前必須先 ZERO）
 事件（MCU → Orin）：EV,evseq,NAME,arg   NAME ∈ BOOT/READY/FIRED/WDOG/ESTOP/FAULT
 規格全文見 docs/mcu_orin_link.md；MCU 端實作見 firmware/rotbot_mcu/。
@@ -135,11 +137,12 @@ class Event:
 
 @dataclass(frozen=True)
 class Reply:
-    kind: str                 # ACK / NAK / PONG / ST
+    kind: str                 # ACK / NAK / PONG / ST / WH
     seq: int
     code: int = E_OK          # NAK 錯誤碼
     status: Status | None = None
     pong: tuple[int, int, int] | None = None    # (proto, fw, uptime_ms)
+    wheels: tuple[float, float, float, float] | None = None   # 四輪輸出軸 rpm（M1 左前、M2 左後、M3 右前、M4 右後）
 
 
 def parse_frame(fields: list[str]) -> Reply | Event:
@@ -155,6 +158,8 @@ def parse_frame(fields: list[str]) -> Reply | Event:
                         rpm_target=n[5], shots=n[6], err=n[7], crc_errors=n[8],
                         vbat=n[9] / 10 if n[9] >= 0 else None)
             return Reply(kind, n[0], status=st)
+        if kind == "WH" and len(fields) == 6:
+            return Reply(kind, n[0], wheels=tuple(v / 10 for v in n[1:5]))
         if kind == "EV" and len(fields) == 4:
             return Event(int(fields[1]), fields[2], int(fields[3]))
     except (IndexError, ValueError) as e:

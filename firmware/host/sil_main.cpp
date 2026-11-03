@@ -66,6 +66,10 @@ class SimHal : public Hal {
 #endif
   }
 
+  void enableWheels(bool on) override { wheels_on_ = on; }
+  void setWheel(uint8_t i, int16_t duty) override { wheel_duty_[i] = duty; }
+  int32_t wheelCount(uint8_t i) override { return (int32_t)std::floor(wheel_counts_[i]); }
+
   // 物理推進（每圈呼叫）
   void tick() {
     double now = elapsed_us() * 1e-6;
@@ -75,7 +79,15 @@ class SimHal : public Hal {
     double target = fly_pwm_ / 255.0 * FLY_MAX_RPM * batt;          // 馬達穩態轉速
     rpm_ += (target - rpm_) * (1.0 - std::exp(-dt / 0.35));        // 一階延遲 τ=0.35 s
     if (feeder_on_ && !jam) phase_ = std::fmod(phase_ + dt / 0.35, 1.0);   // 0.35 s 轉一圈
+    const double cpr = WHEEL_ENC_PPR * 4.0 * WHEEL_GEAR;            // 輸出軸每轉計數
+    for (int i = 0; i < 4; ++i) {                                   // 車輪：輸出軸穩態 160 rpm（全速）、τ=0.15 s
+      double w = wheels_on_ ? wheel_duty_[i] / 1000.0 * 160.0 * batt : 0.0;
+      wheel_rpm_[i] += (w - wheel_rpm_[i]) * (1.0 - std::exp(-dt / 0.15));
+      wheel_counts_[i] += wheel_rpm_[i] / 60.0 * cpr * dt;
+    }
   }
+
+  double wheel_rpm_[4] = {0, 0, 0, 0};
 
   std::string out;
   bool estop_ = false, jam = false;
@@ -90,8 +102,10 @@ class SimHal : public Hal {
   std::chrono::steady_clock::time_point t0_;
   std::mt19937 rng_;
   uint8_t fly_pwm_ = 0;
-  bool steppers_on_ = false, feeder_on_ = false;
+  bool steppers_on_ = false, feeder_on_ = false, wheels_on_ = false;
   double rpm_ = 0, phase_ = 0, last_tick_ = 0;
+  int16_t wheel_duty_[4] = {0, 0, 0, 0};
+  double wheel_counts_[4] = {0, 0, 0, 0};
 };
 
 static void handle_sim(SimHal& hal, App& app, const std::string& cmd) {

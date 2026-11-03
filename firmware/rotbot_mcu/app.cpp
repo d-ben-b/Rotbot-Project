@@ -90,8 +90,16 @@ void App::begin() {
   hal_.setFlywheelPwm(0);
   hal_.setFeeder(0);
   hal_.enableSteppers(true);
+  hal_.enableWheels(false);                    // 收到第一個合法幀才致能
+  for (uint8_t i = 0; i < 4; ++i) {
+    wheel_target_[i] = wheel_out_[i] = wheel_rpm10_[i] = 0;
+    wheel_duty_[i] = 0;
+    hal_.setWheel(i, 0);
+    wheel_count_[i] = hal_.wheelCount(i);
+  }
   last_us_ = hal_.micros();
   last_rx_ms_ = still_since_ms_ = fly_changed_ms_ = fly_ok_since_ms_ = hal_.millis();
+  drive_rx_ms_ = wheel_rpm_ms_ = last_rx_ms_;
   sendEvent("BOOT", FW_VERSION);
 }
 
@@ -145,6 +153,15 @@ void App::enterSafe() {
   fly_target_ = 0;
   fly_changed_ms_ = hal_.millis();
   pitch_.jog_speed = yaw_.jog_speed = 0;
+  stopWheels();
+}
+
+void App::stopWheels() {
+  for (uint8_t i = 0; i < 4; ++i) {
+    wheel_target_[i] = wheel_out_[i] = 0;
+    wheel_duty_[i] = 0;
+    hal_.setWheel(i, 0);
+  }
 }
 
 void App::handleLine(char* line) {
@@ -159,6 +176,7 @@ void App::handleLine(char* line) {
   uint8_t seq = (uint8_t)seq_l;
   uint32_t now = hal_.millis();
   last_rx_ms_ = now;
+  if (!armed_ && !estop_) hal_.enableWheels(true);
   armed_ = true;
   wdog_ = false;                                  // 收到合法幀即解除看門狗安全狀態
 
@@ -234,12 +252,29 @@ void App::handleLine(char* line) {
     pitch_.jog_speed = (float)a / 100.0f * pitch_.steps_per_deg;
     yaw_.jog_speed = (float)b / 100.0f * yaw_.steps_per_deg;
     sendAck(seq, proto::E_OK);
+  } else if (!strcmp(cmd, "DRIVE")) {           // DRIVE,seq,m1,m2,m3,m4（千分比，正 = 前進）
+    if (nargs != 4) { sendAck(seq, proto::E_FORMAT); return; }
+    long v[4];
+    for (uint8_t i = 0; i < 4; ++i)
+      if (!proto::to_long(f[2 + i], &v[i])) { sendAck(seq, proto::E_FORMAT); return; }
+    for (uint8_t i = 0; i < 4; ++i)
+      if (labs(v[i]) > 1000) { sendAck(seq, proto::E_RANGE); return; }
+    if (estop_) { sendAck(seq, proto::E_ESTOP); return; }
+    for (uint8_t i = 0; i < 4; ++i) wheel_target_[i] = (int16_t)v[i];
+    drive_rx_ms_ = now;
+    sendAck(seq, proto::E_OK);
+  } else if (!strcmp(cmd, "WHL")) {             // 四輪輸出軸轉速 × 10
+    if (nargs != 0) { sendAck(seq, proto::E_FORMAT); return; }
+    snprintf(body, sizeof(body), "WH,%u,%d,%d,%d,%d", (unsigned)seq, (int)wheel_rpm10_[0],
+             (int)wheel_rpm10_[1], (int)wheel_rpm10_[2], (int)wheel_rpm10_[3]);
+    reply(body);
   } else if (!strcmp(cmd, "STOP")) {
     if (nargs != 0) { sendAck(seq, proto::E_FORMAT); return; }
     pitch_.jog = yaw_.jog = true;                 // 速度模式 + 目標速度 0 → 減速停在原地
     pitch_.jog_speed = yaw_.jog_speed = 0;
     fly_target_ = 0;
     fly_changed_ms_ = now;
+    stopWheels();
     sendAck(seq, proto::E_OK);
   } else if (!strcmp(cmd, "ZERO")) {
     if (nargs != 2) { sendAck(seq, proto::E_FORMAT); return; }
@@ -325,6 +360,35 @@ void App::updateFeeder(uint32_t now) {
   }
 }
 
+void App::updateWheels(uint32_t now, float dt) {
+  bool any = false;
+  for (uint8_t i = 0; i < 4; ++i) any |= wheel_target_[i] != 0;
+  if (any && (uint32_t)(now - drive_rx_ms_) > DRIVE_TIMEOUT_MS)   // deadman：Orin 沒有持續送 DRIVE
+    for (uint8_t i = 0; i < 4; ++i) wheel_target_[i] = 0;
+  float step = WHEEL_SLEW_PER_S * dt;
+  for (uint8_t i = 0; i < 4; ++i) {
+    float d = wheel_duty_[i], t = wheel_target_[i];
+    d = t > d + step ? d + step : (t < d - step ? d - step : t);
+    wheel_duty_[i] = d;
+    int16_t out = (int16_t)(d >= 0 ? d + 0.5f : d - 0.5f);
+    if (out != wheel_out_[i]) {
+      wheel_out_[i] = out;
+      hal_.setWheel(i, out);
+    }
+  }
+  uint32_t el = now - wheel_rpm_ms_;
+  if (el >= WHEEL_RPM_MS) {                     // 計數差 → 輸出軸 rpm × 10
+    const float per_count = 600000.0f / ((float)WHEEL_ENC_PPR * 4.0f * (float)WHEEL_GEAR);
+    for (uint8_t i = 0; i < 4; ++i) {
+      int32_t c = hal_.wheelCount(i);
+      float rpm10 = (float)(c - wheel_count_[i]) * per_count / (float)el;
+      wheel_count_[i] = c;
+      wheel_rpm10_[i] = (int16_t)(rpm10 >= 0 ? rpm10 + 0.5f : rpm10 - 0.5f);
+    }
+    wheel_rpm_ms_ = now;
+  }
+}
+
 void App::update() {
   uint32_t now_us = hal_.micros();
   float dt = (float)(uint32_t)(now_us - last_us_) * 1e-6f;
@@ -345,8 +409,11 @@ void App::update() {
       yaw_.target = yaw_.pos;
       pitch_.jog = yaw_.jog = false;
       homed_ = false;
+      stopWheels();
+      hal_.enableWheels(false);
     } else {
       hal_.enableSteppers(true);
+      hal_.enableWheels(armed_);
     }
     sendEvent("ESTOP", es ? 1 : 0);
   }
@@ -362,6 +429,7 @@ void App::update() {
   if (pitch_.moving() || yaw_.moving()) still_since_ms_ = now;
   updateFlywheel(now, dt);
   updateFeeder(now);
+  updateWheels(now, dt);
   bool r = ready();
   if (r && !was_ready_) sendEvent("READY", shots_);
   was_ready_ = r;

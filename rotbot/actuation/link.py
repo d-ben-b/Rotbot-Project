@@ -357,6 +357,15 @@ class SerialMCU(ActuatorLink):
         self.request("STOP")
         self._last_aim, self._last_fly = None, 0
 
+    def drive(self, m1: float, m2: float, m3: float, m4: float) -> None:
+        """四輪輸出 -1..1（M1 左前、M2 左後、M3 右前、M4 右後；正 = 前進）。要持續送，MCU 0.5 s 沒收到就停。"""
+        v = [int(round(max(-1.0, min(1.0, x)) * 1000)) for x in (m1, m2, m3, m4)]
+        self.request("DRIVE", *v, retries=0)
+
+    def wheels(self) -> tuple[float, float, float, float]:
+        """四輪輸出軸 rpm（編碼器量測）。"""
+        return self.request("WHL").wheels
+
     def fire(self) -> None:
         self.request("FIRE")
 

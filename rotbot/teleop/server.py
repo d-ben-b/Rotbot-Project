@@ -11,7 +11,8 @@
 安全：
   * 只有一個「駕駛」連線能下指令（規則：一個遙控器、一人操作）；其他連線只能看（急停除外）。
   * 前 60 秒（AUTONOMOUS 鎖定）一律拒絕手動輸入（規則：自主期間不得遙控）。
-  * Deadman：駕駛 deadman_s 沒送輸入 → JOG 歸零；駕駛斷線 → STOP（JOG 停 + 飛輪停）。
+  * Deadman：駕駛 deadman_s 沒送輸入 → JOG、車輪歸零；駕駛斷線 → STOP（JOG、飛輪、車輪停）。
+    MCU 端車輪另有 DRIVE_TIMEOUT_MS（0.5 s）沒收到 DRIVE 就停。
   * MCU 自己還有看門狗（1 s 沒指令 → 飛輪停），Orin 當掉也安全。
   * MCU 重開機（SerialMCU.reboots 變了）：用重開機前的角度自動補回歸零、重送 AIM 目標與飛輪轉速，
     網頁顯示警告直到按「重置」。
@@ -114,6 +115,8 @@ class TeleopServer:
         self.driver: _Client | None = None
         self.last_jog = (0.0, 0.0)
         self.last_jog_t = 0.0
+        self.last_drive = (0.0, 0.0)        # (前進, 轉向) -1..1
+        self.last_drive_t = 0.0
         self.last_fly = 0
         self.last_error = ""
         self.mcu_warning = ""
@@ -141,7 +144,7 @@ class TeleopServer:
             return False
 
     async def _safe_stop(self, why: str):
-        self.last_jog, self.last_fly = (0.0, 0.0), 0
+        self.last_jog, self.last_fly, self.last_drive = (0.0, 0.0), 0, (0.0, 0.0)   # STOP 也停車輪
         await self._mcu("stop")
         self.last_error = self.last_error if self.last_error else ""
         self._log(f"STOP（{why}）")
@@ -168,7 +171,8 @@ class TeleopServer:
             viewers=len(self.clients), mcu_connected=self.mcu is not None, mcu=mcu,
             mcu_rtt_ms=round(statistics.median(rtt), 2) if rtt else None,
             cmd_ms=round(statistics.median(list(self.cmd_ms)[-50:]), 2) if self.cmd_ms else None,
-            jog=self.last_jog, fly=self.last_fly, rpm_preset=self.rpm_preset, max_dps=self.max_dps,
+            jog=self.last_jog, fly=self.last_fly, drive=self.last_drive,
+            rpm_preset=self.rpm_preset, max_dps=self.max_dps,
             last_error=self.last_error, mcu_warning=self.mcu_warning,
             video_frames=self.frames.frames, preview=self._preview_info())
 
@@ -287,6 +291,10 @@ class TeleopServer:
                 self.last_jog = (0.0, 0.0)
                 await self._mcu("jog", 0.0, 0.0)
                 self._log("deadman：駕駛輸入中斷 → JOG 歸零")
+            if stale and self.last_drive != (0.0, 0.0):
+                self.last_drive = (0.0, 0.0)
+                await self._mcu("drive", 0.0, 0.0, 0.0, 0.0)
+                self._log("deadman：駕駛輸入中斷 → 車輪停")
 
     async def _on_startup(self, app):
         self.frames.start()
@@ -416,6 +424,15 @@ class TeleopServer:
         if (jp, jy) != self.last_jog or ((jp, jy) != (0.0, 0.0) and now - self.last_jog_t > self.jog_refresh_s):
             self.last_jog, self.last_jog_t = (jp, jy), now
             await self._mcu("jog", jp, jy)
+        dv = m.get("drive")
+        if dv is not None:
+            fwd, turn = (max(-1.0, min(1.0, float(v))) for v in dv)
+            if (fwd, turn) != self.last_drive or \
+                    ((fwd, turn) != (0.0, 0.0) and now - self.last_drive_t > self.jog_refresh_s):
+                self.last_drive, self.last_drive_t = (fwd, turn), now
+                left, right = fwd + turn, fwd - turn            # 差速：左側 M1/M2、右側 M3/M4
+                k = max(1.0, abs(left), abs(right))
+                await self._mcu("drive", left / k, left / k, right / k, right / k)
         fly = m.get("fly")
         if fly is not None:
             fly = int(max(0, min(4000, int(fly))))

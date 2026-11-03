@@ -83,3 +83,8 @@ def test_reboot_detected_from_status_without_boot_event():
     st(P.F_HOMED, 1500, 300)
     st(P.F_ESTOP, 1500, 300)
     assert mcu.reboots == 1 and mcu.pose_before_reboot is None
+
+
+def test_wheel_reply_parsed():
+    wh = P.parse_frame(P.decode_line(P.encode_line("WH", 7, 482, -15, 0, 1203)))
+    assert wh.kind == "WH" and wh.seq == 7 and wh.wheels == (48.2, -1.5, 0.0, 120.3)
