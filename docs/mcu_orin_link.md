@@ -89,6 +89,8 @@ STAT 旗標：0x01 READY、0x02 MOVING、0x04 FLY_OK、0x08 FIRING、0x10 ESTOP�
 | A2 (PA4) | 飛輪電池電壓分壓（選用，`VBAT_ENABLED`；不可超過 `VBAT_ADC_VREF`） |
 | D2 (PA10) / D3 (PB3) | 飛輪轉速計（外部中斷，選用，`FLY_HAS_TACH`） |
 
+> 2026-11-03：硬體組改用 BTS7960 驅動四顆編碼器馬達，建議接線見 [00_todo.md](00_todo.md) 第 2-2 步。上表是目前韌體的設定，韌體還沒支援 BTS7960 和編碼器。
+
 ⚠️ 待硬體組確認：`PITCH/YAW_STEPS_PER_DEG`（目前 26.67 / 44.44：200 步 × 16 微步 × 減速比 3 / 5）、角度上下限、`FLY_MAX_RPM`、`FEED_MS`、方向是否要反（`*_DIR_INVERT`）。
 6 m 建議配置：**轉速計 + 電池電壓量測 + 推球原點開關**都裝（「full」設定；Uno 資源足夠）。
 
