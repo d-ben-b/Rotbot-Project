@@ -61,6 +61,8 @@ def main():
                     rpm = mcu.wheels()
                     print("    " + "  ".join(f"{r:8.1f}" for r in rpm), flush=True)
                 time.sleep(0.2)
+        except KeyboardInterrupt:
+            print("（Ctrl+C 結束）")
         finally:
             mcu.drive(0, 0, 0, 0)
 
