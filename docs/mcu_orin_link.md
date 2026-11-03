@@ -95,6 +95,7 @@ STAT 旗標：0x01 READY、0x02 MOVING、0x04 FLY_OK、0x08 FIRING、0x10 ESTOP�
 > 2026-11-03：車輪是四顆編碼器馬達（每轉 11 脈衝、減速比 1:56 → 輸出軸每轉 2464 計數），BTS7960 驅動。
 > 編碼器用 TIM1/TIM4/TIM5/TIM20 的 encoder mode，PWM 20 kHz；TIM2/TIM3 留給 D5/D6/D9。
 > 四片模組的 R_EN/L_EN 共用 PB12（外接 10 kΩ 下拉），收到第一個合法幀才致能、急停時拉低。
+> 摩擦輪沒有編碼器，D2/D3 預計改接彈倉的微動開關；彈倉 6 顆 N20 + TB6612 的腳位見 00_todo.md 第 2-4 步（韌體還沒寫）。
 
 ⚠️ 待硬體組確認：`PITCH/YAW_STEPS_PER_DEG`（目前 26.67 / 44.44：200 步 × 16 微步 × 減速比 3 / 5）、角度上下限、`FLY_MAX_RPM`、`FEED_MS`、方向是否要反（`*_DIR_INVERT`）。
 6 m 建議配置：**轉速計 + 電池電壓量測 + 推球原點開關**都裝（「full」設定；Uno 資源足夠）。
