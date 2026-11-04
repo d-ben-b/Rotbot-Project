@@ -109,7 +109,7 @@
         <tr><td><kbd>Space</kbd></td><td>發射（需 READY）</td></tr>
         <tr><td>搖桿</td><td>左搖桿 前後 / 平移、十字鍵左右 原地轉、右搖桿 瞄準、RT 飛輪、A 發射、B 停止、LB 微調</td></tr>
       </table>
-      <div id="pad" class="muted" style="margin-top:6px">搖桿：未偵測（插上後按任一鍵）</div>
+      <div id="pad" class="muted" style="margin-top:6px;white-space:pre-line">搖桿：未偵測（插上後按任一鍵）</div>
     </div>
   </aside>
 </main>
@@ -119,6 +119,7 @@ const $ = (id) => document.getElementById(id);
 const keys = new Set();
 let ws = null, role = "viewer", maxDps = 60, preset = 2400, fly = 0, fireReq = false;
 let lastPadFire = false, lastPadStop = false, rttMs = null, game = "IDLE";
+const PAD_NAMES = ["A", "B", "X", "Y", "LB", "RB", "LT", "RT", "Back", "Start", "L3", "R3", "↑", "↓", "←", "→", "Home"];
 
 if (!window.isSecureContext) $("banner").style.display = "block";
 
@@ -223,8 +224,12 @@ function readInput() {
   let src = "鍵盤";
   const pads = navigator.getGamepads ? Array.from(navigator.getGamepads()).filter(Boolean) : [];
   if (pads.length) {
-    const g = pads[0];
-    $("pad").textContent = "搖桿：" + g.id;
+    const g = pads[0], std = g.mapping === "standard";
+    const held = g.buttons.map((b, i) => b.pressed ? (std && PAD_NAMES[i]) || "#" + i : "").filter(Boolean);
+    $("pad").textContent = "搖桿：" + g.id +                          // 診斷：確認每個鍵、搖桿有讀到
+      (std ? "" : "\n⚠ 不是標準配置，右搖桿和按鍵可能對不上（手把有 X/D 開關就切到 X）") +
+      "\n軸 " + g.axes.slice(0, 4).map((v) => (v >= 0 ? "+" : "") + v.toFixed(2)).join(" ") +
+      " ｜ 按著 " + (held.join(" ") || "–");
     const lx = dz(g.axes[0] || 0), ly = -dz(g.axes[1] || 0);        // 左搖桿：前後 / 平移
     const rx = dz(g.axes[2] || 0), ry = -dz(g.axes[3] || 0);        // 右搖桿：瞄準
     const btn = (i) => g.buttons[i] && g.buttons[i].pressed;
@@ -238,7 +243,7 @@ function readInput() {
     lastPadFire = btn(0);
     if (btn(1) && !lastPadStop) { fly = 0; send({ t: "cmd", name: "stop" }); }
     lastPadStop = btn(1);
-  }
+  } else $("pad").textContent = "搖桿：未偵測（插上後按任一鍵）";
   $("src").textContent = src;
   const k = maxDps * (fine ? 0.25 : 1), kd = fine ? 0.25 : 1;
   return { p: p * k, y: y * k, fwd: fwd * kd, side: side * kd, rot: rot * kd };

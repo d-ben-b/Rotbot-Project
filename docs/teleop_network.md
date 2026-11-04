@@ -58,8 +58,11 @@
 | 搖桿（建議） | `ssh -N -L 8080:127.0.0.1:8080 <user>@192.168.50.10`，再開 `http://localhost:8080` | localhost 算安全連線 → Gamepad API 可用；流量照樣走路由器 |
 | 搖桿（替代） | `--tls-cert/--tls-key` 自簽憑證，開 `https://192.168.50.10:8080`，第一次接受警告 | `openssl req -x509 -newkey rsa:2048 -nodes -keyout key.pem -out cert.pem -days 365 -subj "/CN=rotbot"` |
 
-頁面在非安全連線時會顯示黃色提示。按鍵：W/S 俯仰、A/D 水平（Shift 微調）、R 飛輪開關、Q/E 轉速 ±100、Space 發射、X 停止、Esc 軟體急停；
-搖桿：左搖桿瞄準、RT 飛輪、A 發射、B 停止、LB 微調。⚠️ 比賽只能用「一個遙控器」→ 正式比賽用搖桿，鍵盤只當測試。
+頁面在非安全連線時會顯示黃色提示。按鍵：W/S 俯仰、A/D 水平、↑↓ 前後、←→ 平移、`<` `>` 原地轉（Shift 微調）、R 飛輪開關、Q/E 轉速 ±100、Space 發射、X 停止、Esc 軟體急停；
+搖桿：左搖桿前後 / 平移、十字鍵左右原地轉、右搖桿瞄準、RT 飛輪、A 發射、B 停止、LB 微調。⚠️ 比賽只能用「一個遙控器」→ 正式比賽用搖桿，鍵盤只當測試。
+
+操作說明下方的「搖桿：」一行會顯示手把名稱、前 4 個軸的原始值、按著的鍵（例如 `按著 A RT`）。
+出現「不是標準配置」時，右搖桿和按鍵的編號可能跟上面不同；手把有 X/D 開關就切到 X（XInput）。
 
 ## 5. 安全設計
 
@@ -83,6 +86,14 @@
 
 **B. Orin + 路由器（板子到之前也能做）**：Orin 上 `python -m tools.teleop_web --mcu sil --camera sim`（Orin 內建 g++，可建置韌體模擬器），
 筆電經路由器連線，量 Wi‑Fi 延遲；再接上真 Arduino 換成 `--mcu /dev/ttyACM0`。
+
+**B2. 搖桿經 Orin（比賽的接法）**：
+
+1. 筆電先關掉本機的 `teleop_web`，否則 8080 被占用，SSH 通道會失敗。
+2. Orin：`pkill -f teleop_web; python3 -u -m tools.teleop_web --mcu /dev/ttyACM0 --camera none --auto-s 5`。
+3. 筆電另開一個視窗：`ssh -N -L 8080:127.0.0.1:8080 ben-orin@192.168.50.10`。輸入密碼後沒有任何輸出就是通了，視窗要一直開著。
+4. 筆電瀏覽器開 `http://localhost:8080`：沒有黃色提示，按搖桿任一鍵後出現手把名稱。
+5. 關掉第 3 步的視窗：頁面變「斷線」，伺服器送 STOP。
 
 **C. 練習日（場館）**：
 - 2.4 GHz 與 5 GHz 各測一次：在人員作業區開頁面，看延遲數字與畫面是否卡頓；可用手機 Wi‑Fi 分析 App 找最空的頻道並在路由器固定頻道。
