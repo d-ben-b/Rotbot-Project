@@ -93,18 +93,21 @@
           <span id="l-ready" class="lamp">READY</span> <span id="l-homed" class="lamp">已歸零</span>
           <span id="l-estop" class="lamp">急停</span> <span id="l-wdog" class="lamp">看門狗</span></td></tr>
         <tr><td>本機輸入</td><td>JOG <span id="jog">0, 0</span> °/s ｜ 飛輪 <span id="fly">0</span></td></tr>
+        <tr><td>車輪（前進 / 右移 / 右轉）</td><td><span id="drive">0, 0, 0</span> %</td></tr>
       </table>
     </div>
     <div class="panel help" style="margin-top:14px">
       <h2>操作（只在「手動操控」時有效）</h2>
       <table>
-        <tr><td><kbd>W</kbd><kbd>S</kbd> / <kbd>↑</kbd><kbd>↓</kbd></td><td>俯仰 上 / 下</td></tr>
-        <tr><td><kbd>A</kbd><kbd>D</kbd> / <kbd>←</kbd><kbd>→</kbd></td><td>水平 左 / 右</td></tr>
-        <tr><td><kbd>Shift</kbd></td><td>微調（1/4 速）</td></tr>
+        <tr><td><kbd>W</kbd><kbd>S</kbd></td><td>俯仰 上 / 下</td></tr>
+        <tr><td><kbd>A</kbd><kbd>D</kbd></td><td>水平 左 / 右</td></tr>
+        <tr><td><kbd>↑</kbd><kbd>↓</kbd> / <kbd>←</kbd><kbd>→</kbd></td><td>車子 前進、後退 / 往左、往右平移</td></tr>
+        <tr><td><kbd>&lt;</kbd><kbd>&gt;</kbd></td><td>車子 原地左轉 / 右轉</td></tr>
+        <tr><td><kbd>Shift</kbd></td><td>微調（瞄準和車輪都 1/4 速）</td></tr>
         <tr><td><kbd>R</kbd></td><td>飛輪 開 / 關（預設轉速）</td></tr>
         <tr><td><kbd>Q</kbd><kbd>E</kbd></td><td>飛輪 −/＋ 100 rpm</td></tr>
         <tr><td><kbd>Space</kbd></td><td>發射（需 READY）</td></tr>
-        <tr><td>搖桿</td><td>左搖桿 瞄準、RT 飛輪、A 發射、B 停止、LB 微調</td></tr>
+        <tr><td>搖桿</td><td>左搖桿 前後 / 平移、十字鍵左右 原地轉、右搖桿 瞄準、RT 飛輪、A 發射、B 停止、LB 微調</td></tr>
       </table>
       <div id="pad" class="muted" style="margin-top:6px">搖桿：未偵測（插上後按任一鍵）</div>
     </div>
@@ -165,6 +168,7 @@ function render(m) {
   renderPreview(m.preview);
   $("jog").textContent = m.jog.map((v) => v.toFixed(0)).join(", ");
   $("fly").textContent = m.fly;
+  $("drive").textContent = m.drive.map((v) => (v * 100).toFixed(0)).join(", ");
   $("mcu-warn").textContent = m.mcu_warning ? "⚠ " + m.mcu_warning : "";
   $("mcu-warn").style.display = m.mcu_warning ? "block" : "none";
   if (m.last_error) toast(m.last_error);
@@ -205,19 +209,28 @@ window.addEventListener("blur", () => keys.clear());       // 切走視窗 → �
 // ── 讀輸入（鍵盤 + 搖桿）─────────────────────────
 const dz = (v) => Math.abs(v) < 0.12 ? 0 : Math.sign(v) * ((Math.abs(v) - 0.12) / 0.88) ** 2;
 function readInput() {
-  let p = 0, y = 0, fine = keys.has("ShiftLeft") || keys.has("ShiftRight");
-  if (keys.has("KeyW") || keys.has("ArrowUp")) p += 1;
-  if (keys.has("KeyS") || keys.has("ArrowDown")) p -= 1;
-  if (keys.has("KeyD") || keys.has("ArrowRight")) y += 1;
-  if (keys.has("KeyA") || keys.has("ArrowLeft")) y -= 1;
+  let p = 0, y = 0, fwd = 0, side = 0, rot = 0, fine = keys.has("ShiftLeft") || keys.has("ShiftRight");
+  if (keys.has("KeyW")) p += 1;
+  if (keys.has("KeyS")) p -= 1;
+  if (keys.has("KeyD")) y += 1;
+  if (keys.has("KeyA")) y -= 1;
+  if (keys.has("ArrowUp")) fwd += 1;
+  if (keys.has("ArrowDown")) fwd -= 1;
+  if (keys.has("ArrowRight")) side += 1;
+  if (keys.has("ArrowLeft")) side -= 1;
+  if (keys.has("Period")) rot += 0.5;                              // 原地轉用半速，比較好控制
+  if (keys.has("Comma")) rot -= 0.5;
   let src = "鍵盤";
   const pads = navigator.getGamepads ? Array.from(navigator.getGamepads()).filter(Boolean) : [];
   if (pads.length) {
     const g = pads[0];
     $("pad").textContent = "搖桿：" + g.id;
-    const gx = dz(g.axes[0] || 0), gy = -dz(g.axes[1] || 0);
-    if (gx || gy) { p = gy; y = gx; src = "搖桿"; }
+    const lx = dz(g.axes[0] || 0), ly = -dz(g.axes[1] || 0);        // 左搖桿：前後 / 平移
+    const rx = dz(g.axes[2] || 0), ry = -dz(g.axes[3] || 0);        // 右搖桿：瞄準
     const btn = (i) => g.buttons[i] && g.buttons[i].pressed;
+    if (lx || ly) { fwd = ly; side = lx; src = "搖桿"; }
+    if (rx || ry) { p = ry; y = rx; src = "搖桿"; }
+    if (btn(14) || btn(15)) { rot = btn(15) ? 0.5 : -0.5; src = "搖桿"; }   // 十字鍵左右：原地轉
     if (btn(4)) fine = true;
     const rt = g.buttons[7] ? g.buttons[7].value : 0;
     if (rt > 0.5 && fly === 0) fly = preset;
@@ -227,15 +240,15 @@ function readInput() {
     lastPadStop = btn(1);
   }
   $("src").textContent = src;
-  const k = maxDps * (fine ? 0.25 : 1);
-  return { p: p * k, y: y * k };
+  const k = maxDps * (fine ? 0.25 : 1), kd = fine ? 0.25 : 1;
+  return { p: p * k, y: y * k, fwd: fwd * kd, side: side * kd, rot: rot * kd };
 }
 
 // 20 Hz 送輸入（駕駛才送）；頁面被切到背景時送 0（伺服器 deadman 也會擋）
 setInterval(() => {
   if (role !== "driver") return;
-  const i = document.hidden ? { p: 0, y: 0 } : readInput();
-  send({ t: "input", jog: [i.p, i.y], fly: fly, fire: fireReq });
+  const i = document.hidden ? { p: 0, y: 0, fwd: 0, side: 0, rot: 0 } : readInput();
+  send({ t: "input", jog: [i.p, i.y], drive: [i.fwd, i.side, i.rot], fly: fly, fire: fireReq });
   fireReq = false;
 }, 50);
 setInterval(() => send({ t: "ping", ts: performance.now() }), 1000);

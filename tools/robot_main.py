@@ -56,7 +56,8 @@ def build_robot(cfg: Config, mcu, camera, detector, *, rpm: float = 2400, calib_
     # 預估落點用「這一場」的校正器（AI 自主時學到的偏差，切手動後繼續適用）；開賽前用載入的校正檔
     idle_calib = AdaptiveCalibrator.load(calib_path, cfg.calibration) if calib_path else None
     preview = AimPreview(cfg, calib=lambda: runner.loop.calib if runner.loop is not None else idle_calib)
-    server = TeleopServer(mcu=mcu, camera=shared, sm=sm, rpm_preset=int(rpm), preview=preview)
+    server = TeleopServer(mcu=mcu, camera=shared, sm=sm, rpm_preset=int(rpm), preview=preview,
+                          chassis=cfg.chassis)
     return server, runner, shared
 
 

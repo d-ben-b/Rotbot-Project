@@ -19,4 +19,10 @@ class Hal {
   virtual bool estopActive() = 0;
   virtual void write(const char* s, size_t n) = 0;     // 序列輸出
   virtual float batteryVolts() { return -1.0f; }       // 飛輪電池電壓；沒量測回傳 -1
+  // 車輪（i = 0..3 → M1 左前、M2 左後、M3 右前、M4 右後）；沒有車輪的板子用預設的空實作
+  virtual void enableWheels(bool) {}                   // BTS7960 EN
+  virtual void setWheel(uint8_t, int16_t) {}           // -1000..1000（千分比），正 = 前進
+  virtual int32_t wheelCount(uint8_t) { return 0; }    // 編碼器累計計數（4 倍頻，正 = 前進）
+  virtual uint16_t wheelRaw(uint8_t) { return 0; }     // 除錯：計時器原始計數
+  virtual uint8_t wheelPins() { return 0; }            // 除錯：bit 2i = Mi+1 的 A、bit 2i+1 = B 目前電位
 };

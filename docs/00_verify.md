@@ -15,8 +15,8 @@
 
 | # | 要確認的事 | 指令 | 應該看到 |
 | --- | --- | --- | --- |
-| 1 | 程式整體沒壞 | `python -m pytest -q` | `85 passed, 2 skipped`（約 1 分鐘；skip 的 2 項只在 Linux 或接著實體相機時才跑） |
-| 2 | Orin 和 MCU 之間的指令都對（同一份韌體在電腦上模擬） | `python -m tools.mcu_link_test --sil` | `結果：PASS 21  FAIL 0` |
+| 1 | 程式整體沒壞 | `python -m pytest -q` | `93 passed, 2 skipped`（約 1.5 分鐘；skip 的 2 項只在 Linux 或接著實體相機時才跑） |
+| 2 | Orin 和 MCU 之間的指令都對（同一份韌體在電腦上模擬） | `python -m tools.mcu_link_test --sil` | `結果：PASS 25  FAIL 0` |
 | 3 | AI 能自己投完一整場 | `python -m tools.run_autonomous --sim` | 約 35 秒後印出 `共 27 球、韌體推球計數 27`，以及 `得分 50、命中 24/27` 左右 |
 | 4 | 網頁操控和預估落點 | `python -m tools.robot_main --sim`，瀏覽器開 <http://localhost:8080> | 照下面 B 節檢查 |
 
@@ -29,8 +29,9 @@
    相機裝在轉塔上，所以**畫面會上下左右跳，這是正常的**。模擬畫面本身沒有加雜訊。
 3. AI 轉到瞄準角度停下來時，**畫面上的綠圈會剛好落在它要打的那個孔**，右下角小圖的那個孔也會變綠。
    這證明「預估落點」和 AI 瞄準用的是同一套計算。
-4. 60 秒後按「切手動」，然後按 R 開飛輪，用 W/S/A/D 移動：
+4. 60 秒後按「切手動」，然後按 R 開飛輪，用 W/S/A/D 瞄準：
    - 綠圈 = 會進，橘圈 = 不會進。
+   - 按方向鍵或 `<` `>` 時，右邊「車輪（前進 / 右移 / 右轉）」的數字會變，放開後回到 0。模擬畫面裡的車子不會動。
    - 畫面下方的文字會寫「✓ 會進『中排中』」或「✗ 不會進…偏下 30 cm」。
    - 按 Space 發射時，要等 READY 燈亮才發得出去。
 5. 按 Esc（軟體急停）：飛輪目標轉速變 0，不能再發射。
@@ -42,11 +43,12 @@
 
 | 要確認的事 | 怎麼做 | 應該看到 |
 | --- | --- | --- |
-| 韌體能在 G474RE 上編譯 | Arduino IDE 選 Nucleo-64 / Nucleo G474RE 後按「✓」驗證 | 約 33 KB（6%），沒有錯誤 |
+| 韌體能在 G474RE 上編譯 | Arduino IDE 選 Nucleo-64 / Nucleo G474RE 後按「✓」驗證 | 約 35 KB（6%），沒有錯誤 |
 | MCU 收得到、回得對 | 序列埠監控視窗（115200、Newline）按 RESET 後打 `PING,0` | 先看到 `EV,1,BOOT,1*91`，再回 `PONG,0,1,1,…` |
-| 通訊沒問題（不動馬達） | 先關掉監控視窗、按 RESET，再跑 `python -m tools.mcu_link_test --port COM7` | `FAIL 0`，PASS 約 11 項（開機訊息那項 SKIP 是正常的） |
-| 馬達、飛輪、推球的指令都對 | 同上，加 `--allow-motion` | `FAIL 0`，PASS 約 17 項 |
-| 轉塔角度回報正確（接了馬達才測） | `python -m tools.teleop_web --mcu COM7 --camera none --auto-s 5`，網頁依序按「歸零」→「開始」→ 5 秒後「切手動」→ 按 W | 網頁上的俯仰角跟著變；用量角器量，實際角度差 < 0.5° |
+| 通訊沒問題（不動馬達） | 先關掉監控視窗、按 RESET，再跑 `python -m tools.mcu_link_test --port COM5` | `FAIL 0`，PASS 約 12 項（開機訊息那項 SKIP 是正常的） |
+| 馬達、飛輪、推球的指令都對 | 同上，加 `--allow-motion` | `FAIL 0`，PASS 約 18 項 |
+| 四個車輪和編碼器（車架高、輪子離地） | 同上，改加 `--allow-drive` | 「車輪逐輪轉 + 編碼器」PASS，四個數字都是正的；「車輪 deadman 自動停」PASS |
+| 轉塔角度回報正確（接了馬達才測） | `python -m tools.teleop_web --mcu COM5 --camera none --auto-s 5`，網頁依序按「歸零」→「開始」→ 5 秒後「切手動」→ 按 W | 網頁上的俯仰角跟著變；用量角器量，實際角度差 < 0.5° |
 | MCU 重開機會自動補回（不接馬達也能測） | 同上一列，按 W 轉到俯仰約 10° 後放開，再按板子上黑色的 RESET | 1 秒內網頁上方出現紅色「MCU 重開機（第 1 次）：已用重開機前的角度補回歸零」，俯仰角和按 RESET 前一樣，「已歸零」燈亮著 |
 
 ## D. 只有實機能證明的事

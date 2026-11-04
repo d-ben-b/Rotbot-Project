@@ -29,7 +29,7 @@ firmware/rotbot_mcu/   # MCU 韌體：NUCLEO-G474RE（STM32duino）；同一份�
 configs/               # field.yaml（場地/球/機構/校正）、robot.yaml（機器人幾何）
 tools/                 # 各種可直接執行的工具（見下）
 docs/                  # 00_todo / 00_verify（先看）、6 m 評估、MCU 連線、網路操控、相機（imx296_jetson）
-tests/                 # pytest（85 項 + 2 項只在 Linux / 實體相機跑）
+tests/                 # pytest（93 項 + 2 項只在 Linux / 實體相機跑）
 ```
 
 ## 安裝

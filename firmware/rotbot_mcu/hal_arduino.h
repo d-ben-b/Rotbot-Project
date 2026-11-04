@@ -45,8 +45,20 @@ class ArduinoHal : public Hal {
   }
   void write(const char* s, size_t n) override { Serial.write((const uint8_t*)s, n); }
   float batteryVolts() override;
+#if WHEELS_ENABLED
+  void enableWheels(bool on) override { digitalWrite(PIN_WHEEL_EN, on ? HIGH : LOW); }
+  void setWheel(uint8_t i, int16_t duty) override;
+  int32_t wheelCount(uint8_t i) override;
+  uint16_t wheelRaw(uint8_t i) override;
+  uint8_t wheelPins() override;
+#endif
 
  private:
+#if WHEELS_ENABLED
+  void beginWheels();
+  uint16_t enc_last_[4] = {0, 0, 0, 0};
+  int32_t enc_acc_[4] = {0, 0, 0, 0};
+#endif
   bool last_dir_[2] = {true, true};
   uint32_t tach_t0_ = 0, vbat_t_ = 0;
   int32_t rpm_ = 0;

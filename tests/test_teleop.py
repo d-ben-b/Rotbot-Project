@@ -208,3 +208,51 @@ def test_teleop_restores_zero_after_mcu_reboot():
                     break
                 time.sleep(0.02)
             asyncio.run(scenario(mcu))
+
+
+def test_teleop_drive_mixing_and_deadman():
+    """手動時方向鍵/左搖桿 → 麥克納姆輪四輪輸出；自主期間不開車；輸入中斷 → 車輪停。"""
+    class DriveMCU(FakeMCU):
+        def drive(self, *w):
+            self.calls.append(("drive", *w))
+
+    async def scenario():
+        mcu = DriveMCU()
+        server = TeleopServer(mcu=mcu, camera=None, sm=MatchStateMachine(auto_s=0.3, match_s=30))
+        runner, port = await _serve(server)
+        try:
+            async with aiohttp.ClientSession() as s:
+                ws = await s.ws_connect(f"http://127.0.0.1:{port}/ws")
+                await ws.send_json({"t": "cmd", "name": "start"})
+                await _wait(ws, lambda m: m["t"] == "state" and m["game"] == "AUTONOMOUS")
+                await ws.send_json({"t": "input", "jog": [0, 0], "drive": [1, 0], "fly": 0})
+                await asyncio.sleep(0.1)
+                assert not [c for c in mcu.calls if c[0] == "drive"]           # 自主期間不開車
+                await asyncio.sleep(0.3)
+                await ws.send_json({"t": "cmd", "name": "manual"})
+                await _wait(ws, lambda m: m["t"] == "state" and m["game"] == "MANUAL")
+                # (前進, 右移, 右轉) → (M1 左前, M2 左後, M3 右前, M4 右後)，麥克納姆輪 X 型
+                for drive, want in (([1, 0, 0], (1, 1, 1, 1)), ([0, 1, 0], (1, -1, -1, 1)),
+                                    ([0, 0, 1], (1, 1, -1, -1)), ([1, 1, 0], (1, 0, 0, 1))):
+                    await ws.send_json({"t": "input", "jog": [0, 0], "drive": drive, "fly": 0})
+                    await asyncio.sleep(0.05)
+                    assert mcu.calls[-1] == ("drive", *want), mcu.calls[-1]
+                await asyncio.sleep(0.5)                                      # 停止送輸入 → deadman
+                assert mcu.calls[-1] == ("drive", 0.0, 0.0, 0.0, 0.0)
+                await _wait(ws, lambda m: m["t"] == "state" and m["drive"] == [0.0, 0.0, 0.0])   # 網頁也顯示歸零
+                await ws.close()
+        finally:
+            await runner.cleanup()
+
+    asyncio.run(scenario())
+
+
+def test_chassis_mix_options():
+    """一般輪（差速）時橫移無效；strafe_invert 讓橫移反向；輸出超過 1 時等比例縮小。"""
+    from rotbot.config import ChassisConfig
+    tank = TeleopServer(chassis=ChassisConfig(mecanum=False))
+    assert tank.mix(0, 1, 0) == (0, 0, 0, 0)
+    assert tank.mix(1, 0, 1) == (1, 1, 0, 0)
+    inv = TeleopServer(chassis=ChassisConfig(strafe_invert=True))
+    assert inv.mix(0, 1, 0) == (-1, 1, 1, -1)
+    assert TeleopServer().mix(1, 1, 1) == (1, 1 / 3, -1 / 3, 1 / 3)

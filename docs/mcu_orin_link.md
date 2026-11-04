@@ -54,7 +54,10 @@ Jetson Orin (Python)                         NUCLEO-G474RE (C++，STM32duino)
 | `FLY` | rpm | `ACK` / `NAK` | 飛輪目標轉速（0 = 停） |
 | `FIRE` | – | `ACK` 後送 `EV FIRED` / `NAK` | **到位穩定 + 飛輪到速才推球** |
 | `JOG` | pitch_cdps, yaw_cdps | `ACK` | 手動速度模式（需持續送，否則看門狗停） |
-| `STOP` | – | `ACK` | JOG 歸零、飛輪停（位置保持） |
+| `STOP` | – | `ACK` | JOG 歸零、飛輪停、車輪停（位置保持） |
+| `DRIVE` | m1, m2, m3, m4（千分比 ±1000） | `ACK` / `NAK` | 四輪輸出（M1 左前、M2 左後、M3 右前、M4 右後；正 = 前進）。變化率限制 `WHEEL_SLEW_PER_S`；**`DRIVE_TIMEOUT_MS`（0.5 s）沒收到就停** |
+| `WHL` | – | `WH,seq,rpm10×4` | 四輪輸出軸轉速 × 10（編碼器，每 100 ms 更新） |
+| `ENC` | – | `ER,seq,raw×4,pins` | 除錯：四個計時器原始計數、A/B 腳位電位（bit 2i = Mi+1 的 A、2i+1 = B） |
 
 | 事件（MCU → Orin） `EV,evseq,NAME,arg` | 何時 |
 |---|---|
@@ -84,10 +87,16 @@ STAT 旗標：0x01 READY、0x02 MOVING、0x04 FLY_OK、0x08 FIRING、0x10 ESTOP�
 | A3 (PB0) | 兩軸 EN（LOW 致能） |
 | D5 (PB4) / D6 (PB10) | 左 / 右飛輪 PWM |
 | D9 (PC7) | 推球（曲柄滑塊）馬達 PWM |
-| A0 (PA0) | 推球原點開關（選用） |
+| CN7-1 (PC10) | 推球原點開關（選用；11/03 前在 A0，A0 改給車輪編碼器） |
 | A1 (PA1) | 急停輔助接點（選用，`ESTOP_SENSE_ENABLED`） |
 | A2 (PA4) | 飛輪電池電壓分壓（選用，`VBAT_ENABLED`；不可超過 `VBAT_ADC_VREF`） |
 | D2 (PA10) / D3 (PB3) | 飛輪轉速計（外部中斷，選用，`FLY_HAS_TACH`） |
+| 車輪 × 4（BTS7960 + 霍爾編碼器） | 腳位表見 [00_todo.md](00_todo.md) 第 2-2 步；`config.h` 的 `WHEEL_*` |
+
+> 2026-11-03：車輪是四顆編碼器馬達（每轉 11 脈衝、減速比 1:56 → 輸出軸每轉 2464 計數），BTS7960 驅動。
+> 編碼器用 TIM1/TIM4/TIM5/TIM20 的 encoder mode，PWM 20 kHz；TIM2/TIM3 留給 D5/D6/D9。
+> 四片模組的 R_EN/L_EN 共用 PB12（外接 10 kΩ 下拉），收到第一個合法幀才致能、急停時拉低。
+> 摩擦輪沒有編碼器，D2/D3 預計改接彈倉的微動開關；彈倉 6 顆 N20 + TB6612 的腳位見 00_todo.md 第 2-4 步（韌體還沒寫）。
 
 ⚠️ 待硬體組確認：`PITCH/YAW_STEPS_PER_DEG`（目前 26.67 / 44.44：200 步 × 16 微步 × 減速比 3 / 5）、角度上下限、`FLY_MAX_RPM`、`FEED_MS`、方向是否要反（`*_DIR_INVERT`）。
 6 m 建議配置：**轉速計 + 電池電壓量測 + 推球原點開關**都裝（「full」設定；Uno 資源足夠）。
@@ -127,7 +136,7 @@ STAT 旗標：0x01 READY、0x02 MOVING、0x04 FLY_OK、0x08 FIRING、0x10 ESTOP�
 | L6 | 整機 | `python -m tools.run_autonomous --mcu /dev/ttyACM0`（相機預設用 IMX296） | 真相機 + YOLO + 真投球 |
 
 燒錄：Arduino IDE 開 `firmware/rotbot_mcu/rotbot_mcu.ino` 上傳（步驟見 00_todo.md）；或
-`arduino-cli compile --upload -p COM7 --fqbn STMicroelectronics:stm32:Nucleo_64:pnum=NUCLEO_G474RE firmware/rotbot_mcu`。
+`arduino-cli compile --upload -p COM5 --fqbn STMicroelectronics:stm32:Nucleo_64:pnum=NUCLEO_G474RE firmware/rotbot_mcu`。
 手動除錯：序列埠監控視窗 115200、換行 LF，直接打 `PING,0`、`STAT,0`、`ZERO,0,0,0`、`AIM,0,1000,0`（SEQ 0 = 不去重）。
 
 ## 6. Orin 端設定與常見問題

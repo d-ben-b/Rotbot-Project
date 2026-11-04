@@ -7,6 +7,10 @@
 - **架構可行，已在電腦上完整驗證**：網頁 → WebSocket → 伺服器 → `SerialMCU` → 韌體（模擬器，同一份 Arduino 原始碼）。
   經本機區網 IP（`192.168.1.102`，走家用路由器那張網卡）實測：瀏覽器↔伺服器往返 **0.41 ms**、瀏覽器指令→MCU ACK **0.61 ms**、
   前 60 秒手動輸入一律被拒、切手動後轉塔跟著轉、READY 後發射、急停飛輪歸 0；相機畫面（數位孿生）隨轉塔即時改變。
+- **2026-11-04 實機 Wi-Fi 實測**（Orin 跑 `teleop_web --mcu none --camera none`，筆電經隊上路由器 2.4 GHz 頻道 8）：
+  - 瀏覽器↔Orin 往返一般約 2 ms、最高 9.0 ms；6 m、10 m、隔一面牆都沒有斷線（使用者回報）。
+  - 自主鎖定、切手動、按鍵輸入、放開歸零都正常。
+  - 這是在學校測的，場館的干擾（下一點）還要在練習日再測。
 - **「localhost」的意思**：伺服器跑在 Orin 上、只在自備路由器的區網內，**不經網際網路**（規則第 10 條禁止場館外遙控、第 14 條場館不提供 Wi‑Fi）。
 - **搖桿要「安全連線」**：瀏覽器只在 `https://` 或 `http://localhost` 開放 Gamepad API（Firefox 81+、Chrome 86+）；
   用 `http://<Orin IP>` 開時搖桿看起來就像沒插（鍵盤不受影響）。解法：**筆電用 SSH 通道把 Orin 的 8080 轉到自己的 localhost**（§4）。
@@ -35,7 +39,16 @@
 3. Orin 防火牆：`sudo ufw allow 8080/tcp`（有開 ufw 時）；SSH 已開（`sudo systemctl enable --now ssh`）。
 4. 啟動（之後可做成 systemd 開機自動跑）：
    `python -m tools.teleop_web --mcu /dev/ttyACM0 --camera cfg`（`cfg` = `field.yaml` 的機上相機 IMX296；USB 相機給編號）。
-5. 備案：不帶路由器時可讓 Orin 自己當熱點：`nmcli dev wifi hotspot ifname wlan0 ssid rotbot password <密碼>`。
+5. 備案：不帶路由器時可讓 Orin 自己當熱點：`nmcli dev wifi hotspot ifname wlP1p1s0 ssid rotbot password <密碼>`。
+
+**2026-11-04 實際設定**（密碼不寫在 repo）：
+
+- 路由器 ASUS RT-AX1800HP，管理頁 `http://www.asusrouter.com`（= 192.168.50.1）。同一時間只能一個人登入，改完要按「登出」。
+- WPA2 已設密碼；Orin 用「手動指定 IP 的 DHCP 列表」綁 MAC `58:02:05:bd:b8:9f` → **192.168.50.10**。
+- Orin 的無線網卡叫 `wlP1p1s0`（不是 `wlan0`），有線是 `enP8p1s0`；登入帳號 `ben-orin`。
+- 沒有螢幕時：Orin 的 USB-C 接電腦，`ssh ben-orin@192.168.55.1`（Jetson 的 USB 網路，不需要路由器）。
+- 連 Wi-Fi：`sudo nmcli dev wifi connect "<SSID>" password "<密碼>" ifname wlP1p1s0`；
+  改了路由器 SSID / 密碼要先 `sudo nmcli con delete "<舊SSID>"` 再連。綁好 IP 後 `nmcli con down/up` 才會拿到新 IP。
 
 ## 4. 操作手筆電
 

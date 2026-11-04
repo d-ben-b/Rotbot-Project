@@ -99,6 +99,10 @@ camera_mount:     # 相機相對「發射點」的外參（⚠️ 全 0=相機�
 match:
   n_balls: 27     # 一場比賽球數
 
+chassis:              # 底盤（手動操控開車）；四輪 M1 左前、M2 左後、M3 右前、M4 右後（韌體 DRIVE 指令）
+  mecanum: true       # 麥克納姆輪：方向鍵 ←→ / 左搖桿左右 = 橫移
+  strafe_invert: false  # 實測橫移方向反了改 true
+
 sim:
   dt: 0.001       # 物理積分步長 (s)
   seed: 42

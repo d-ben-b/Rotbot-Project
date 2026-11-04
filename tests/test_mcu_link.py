@@ -95,3 +95,37 @@ def test_reboot_detected_and_zero_restored(sil):
         mcu.restore_after_reboot()
         st = _settle(mcu, 30.0, 10.0)                       # 重送的 AIM 讓它繼續轉到目標
         assert st.rpm_target == 1800                        # 飛輪轉速也重送了
+
+
+def test_stop_also_stops_wheels(sil):
+    """STOP（操控台的停止鍵、駕駛斷線）也要讓車輪停。"""
+    import time
+
+    from rotbot.actuation.link import SerialMCU
+    with SerialMCU(sil.url) as mcu:
+        for _ in range(8):
+            mcu.drive(0.5, 0.5, -0.5, -0.5)
+            time.sleep(0.1)
+        rpm = mcu.wheels()
+        assert rpm[0] > 20 and rpm[2] < -20
+        mcu.stop()
+        time.sleep(0.8)
+        assert max(abs(r) for r in mcu.wheels()) < 3.0
+
+
+def test_encoder_raw_debug(sil):
+    """除錯指令 ENC：原始計數跟著轉、A/B 腳位會變。"""
+    import time
+
+    from rotbot.actuation.link import SerialMCU
+    with SerialMCU(sil.url) as mcu:
+        raw0, _ = mcu.encoder_raw()
+        seen = set()
+        for _ in range(6):
+            mcu.drive(0.3, 0, 0, 0)
+            time.sleep(0.05)
+            seen.add(mcu.encoder_raw()[1] & 0b11)
+        raw1, _ = mcu.encoder_raw()
+        mcu.stop()
+        assert raw1[0] != raw0[0] and raw1[1:] == raw0[1:]
+        assert len(seen) > 1
