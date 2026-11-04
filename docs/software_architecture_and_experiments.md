@@ -1,5 +1,10 @@
 # 軟體架構與物理／校正實驗（工作參考）
 
+> ⚠️ 2026-10-25 起投球距離改為 **6 m**：本文 §1–§2 的實驗數字是 2.5 m 時期（2026-09）的結果，保留作歷史對照。
+> 6 m 的參數、成績與硬體規格見 [six_meter_reassessment.md](six_meter_reassessment.md)；
+> 新增的協定/韌體/網頁操控/自主主迴圈見 [mcu_orin_link.md](mcu_orin_link.md)、[teleop_network.md](teleop_network.md)、
+> [hardware_bringup_plan.md](hardware_bringup_plan.md)。
+
 > AI 自主棒球投手機器人 — 軟體（感知・決策・模擬）。本文件涵蓋：設定參數來源分類、
 > 物理與校正實驗結果、整體程式架構、各模組邏輯、用到的函式庫、關鍵假設、以及要提前
 > 跟硬體組講的前提。日期：2026-09。

@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rotbot 操控台</title>
+<style>
+  :root {
+    --bg: #111418; --panel: #1a1f26; --line: #2a313b; --text: #e6e9ee; --muted: #9aa4b2;
+    --ok: #3ccf7a; --warn: #f2b33d; --bad: #ff5a52; --accent: #49a6ff;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 16px/1.45 system-ui, "Microsoft JhengHei", "Noto Sans TC", sans-serif; }
+  header { display: flex; align-items: center; gap: 12px; padding: 10px 16px;
+           border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  header h1 { font-size: 18px; margin: 0; font-weight: 600; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--bad); display: inline-block; }
+  .dot.on { background: var(--ok); }
+  .muted { color: var(--muted); }
+  #banner { display: none; background: #3a2a0a; color: var(--warn); padding: 8px 16px;
+            border-bottom: 1px solid #5a4210; font-size: 15px; }
+  #mcu-warn { display: none; background: #451613; color: #ffd0cc; padding: 8px 16px;
+              border-bottom: 1px solid #7a1712; font-size: 16px; font-weight: 600; }
+  main { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 14px; padding: 14px 16px; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+  #video { width: 100%; aspect-ratio: 4 / 3; object-fit: contain; background: #000; border-radius: 8px; display: block; }
+  #pred { font-size: 20px; font-weight: 600; margin-top: 8px; }
+  #pred.in { color: var(--ok); } #pred.out { color: var(--warn); }
+  #state { font-size: 28px; font-weight: 700; letter-spacing: .5px; }
+  #state.AUTONOMOUS { color: var(--accent); } #state.MANUAL { color: var(--ok); }
+  #state.ESTOP { color: var(--bad); } #state.FINISHED { color: var(--muted); }
+  #clock { font-size: 22px; font-variant-numeric: tabular-nums; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0; }
+  button { background: #253041; color: var(--text); border: 1px solid #34425a; border-radius: 8px;
+           padding: 10px 14px; font-size: 16px; cursor: pointer; }
+  button:hover { background: #2d3a4f; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  #btn-estop { background: #7a1712; border-color: #a4231b; font-weight: 700; flex: 1 1 100%; padding: 14px; font-size: 18px; }
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  td { padding: 4px 0; border-bottom: 1px solid var(--line); }
+  td:last-child { text-align: right; }
+  .lamp { padding: 2px 8px; border-radius: 6px; font-size: 14px; background: #2a313b; color: var(--muted); }
+  .lamp.on { background: #163d27; color: var(--ok); }
+  .lamp.bad { background: #451613; color: var(--bad); }
+  #toast { min-height: 24px; color: var(--warn); font-size: 15px; margin-top: 8px; }
+  kbd { background: #252c36; border: 1px solid #39424f; border-radius: 4px; padding: 0 6px; font-size: 14px; }
+  .help td:first-child { white-space: nowrap; }
+  h2 { font-size: 15px; margin: 4px 0 8px; color: var(--muted); font-weight: 600; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Rotbot 操控台</h1>
+  <span><span id="conn" class="dot"></span> <span id="conn-txt" class="muted">連線中…</span></span>
+  <span class="muted">瀏覽器↔Orin <b id="rtt">–</b> ms ｜ Orin↔MCU <b id="mrtt">–</b> ms ｜ 指令 <b id="cms">–</b> ms</span>
+  <span class="muted" style="margin-left:auto">角色：<b id="role">–</b> ｜ 輸入：<b id="src">鍵盤</b></span>
+</header>
+<div id="banner">此頁不是安全連線（不是 localhost / HTTPS），瀏覽器會擋搖桿（鍵盤仍可用）。要用搖桿：在筆電執行
+  <kbd>ssh -N -L 8080:127.0.0.1:8080 使用者@Orin的IP</kbd> 後開 <kbd>http://localhost:8080</kbd>（見 docs/teleop_network.md）。</div>
+<div id="mcu-warn"></div>
+<main>
+  <section>
+    <img id="video" src="/video.mjpg" alt="機器人相機">
+    <div id="pred">預估落點：–</div>
+    <div class="muted" style="font-size:14px">畫面上的圈＝球會打到的地方（綠＝會進、橘＝不會進），右下角小圖＝整面網板。
+      依轉塔目前角度和飛輪轉速計算；準不準取決於出射速度有沒有實測過。</div>
+    <div id="toast"></div>
+  </section>
+  <aside>
+    <div class="panel">
+      <div id="state">–</div>
+      <div id="clock" class="muted">–</div>
+      <div class="row">
+        <button id="btn-start" data-cmd="start">開始（哨音）</button>
+        <button id="btn-manual" data-cmd="manual">切手動</button>
+        <button id="btn-auto" data-cmd="auto">交還 AI</button>
+        <button data-cmd="stop">停止 <kbd>X</kbd></button>
+        <button data-cmd="zero">歸零</button>
+        <button data-cmd="reset">重置</button>
+        <button id="btn-claim">取得控制權</button>
+        <button id="btn-estop" data-cmd="estop">軟體急停 <kbd>Esc</kbd>（實體紅色按鈕才會斷電）</button>
+      </div>
+    </div>
+    <div class="panel" style="margin-top:14px">
+      <h2>MCU 狀態</h2>
+      <table>
+        <tr><td>俯仰 / 水平</td><td><span id="pitch">–</span>° / <span id="yaw">–</span>°</td></tr>
+        <tr><td>飛輪（量測 / 目標）</td><td><span id="rpm">–</span> / <span id="rpmt">–</span> rpm</td></tr>
+        <tr><td>已發射 ｜ 飛輪電池</td><td><span id="shots">–</span> ｜ <span id="vbat">–</span></td></tr>
+        <tr><td>燈號</td><td>
+          <span id="l-ready" class="lamp">READY</span> <span id="l-homed" class="lamp">已歸零</span>
+          <span id="l-estop" class="lamp">急停</span> <span id="l-wdog" class="lamp">看門狗</span></td></tr>
+        <tr><td>本機輸入</td><td>JOG <span id="jog">0, 0</span> °/s ｜ 飛輪 <span id="fly">0</span></td></tr>
+        <tr><td>車輪（前進 / 右移 / 右轉）</td><td><span id="drive">0, 0, 0</span> %</td></tr>
+      </table>
+    </div>
+    <div class="panel help" style="margin-top:14px">
+      <h2>操作（只在「手動操控」時有效）</h2>
+      <table>
+        <tr><td><kbd>W</kbd><kbd>S</kbd></td><td>俯仰 上 / 下</td></tr>
+        <tr><td><kbd>A</kbd><kbd>D</kbd></td><td>水平 左 / 右</td></tr>
+        <tr><td><kbd>↑</kbd><kbd>↓</kbd> / <kbd>←</kbd><kbd>→</kbd></td><td>車子 前進、後退 / 往左、往右平移</td></tr>
+        <tr><td><kbd>&lt;</kbd><kbd>&gt;</kbd></td><td>車子 原地左轉 / 右轉</td></tr>
+        <tr><td><kbd>Shift</kbd></td><td>微調（瞄準和車輪都 1/4 速）</td></tr>
+        <tr><td><kbd>R</kbd></td><td>飛輪 開 / 關（預設轉速）</td></tr>
+        <tr><td><kbd>Q</kbd><kbd>E</kbd></td><td>飛輪 −/＋ 100 rpm</td></tr>
+        <tr><td><kbd>Space</kbd></td><td>發射（需 READY）</td></tr>
+        <tr><td>搖桿</td><td>左搖桿 前後 / 平移、十字鍵左右 原地轉、右搖桿 瞄準、RT 飛輪、A 發射、B 停止、LB 微調</td></tr>
+      </table>
+      <div id="pad" class="muted" style="margin-top:6px">搖桿：未偵測（插上後按任一鍵）</div>
+    </div>
+  </aside>
+</main>
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const keys = new Set();
+let ws = null, role = "viewer", maxDps = 60, preset = 2400, fly = 0, fireReq = false;
+let lastPadFire = false, lastPadStop = false, rttMs = null, game = "IDLE";
+
+if (!window.isSecureContext) $("banner").style.display = "block";
+
+function connect() {
+  ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws");
+  ws.onopen = () => { $("conn").classList.add("on"); $("conn-txt").textContent = "已連線"; };
+  ws.onclose = () => { $("conn").classList.remove("on"); $("conn-txt").textContent = "斷線，重連中…";
+                       setTimeout(connect, 1000); };
+  ws.onmessage = (e) => {
+    const m = JSON.parse(e.data);
+    if (m.t === "state") render(m);
+    else if (m.t === "pong") { rttMs = performance.now() - m.ts; $("rtt").textContent = rttMs.toFixed(1); }
+    else if (m.t === "notice") toast(m.msg);
+  };
+}
+function send(obj) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
+let toastTimer = null;
+function toast(msg) { $("toast").textContent = msg; clearTimeout(toastTimer);
+                      toastTimer = setTimeout(() => $("toast").textContent = "", 4000); }
+const fmt = (v, d = 2) => (v === null || v === undefined) ? "–" : Number(v).toFixed(d);
+
+function render(m) {
+  role = m.role; maxDps = m.max_dps; preset = m.rpm_preset; game = m.game;
+  $("role").textContent = role === "driver" ? "駕駛" : "觀看";
+  $("btn-claim").disabled = role === "driver";
+  const st = $("state"); st.className = m.game;
+  let label = m.game_label;
+  if (m.game === "AUTONOMOUS" && m.auto_locked) label += `（手動鎖定剩 ${Math.ceil(m.lock_left)} 秒）`;
+  st.textContent = label;
+  $("clock").textContent = m.game === "IDLE" ? "未開始" :
+    `已過 ${m.elapsed.toFixed(1)} s ｜ 剩 ${m.remaining.toFixed(0)} s`;
+  $("btn-start").disabled = m.game !== "IDLE";
+  $("btn-manual").disabled = !(m.game === "AUTONOMOUS" && !m.auto_locked);
+  $("btn-auto").disabled = m.game !== "MANUAL";
+  $("mrtt").textContent = fmt(m.mcu_rtt_ms, 1); $("cms").textContent = fmt(m.cmd_ms, 1);
+  const s = m.mcu;
+  if (s) {
+    $("pitch").textContent = fmt(s.pitch); $("yaw").textContent = fmt(s.yaw);
+    $("rpm").textContent = s.rpm < 0 ? "無轉速計" : s.rpm; $("rpmt").textContent = s.rpm_target;
+    $("shots").textContent = s.shots;
+    $("vbat").textContent = s.vbat === null ? "未量測" : s.vbat.toFixed(1) + " V";
+    $("l-ready").className = "lamp" + (s.ready ? " on" : "");
+    $("l-homed").className = "lamp" + (s.homed ? " on" : "");
+    $("l-estop").className = "lamp" + (s.estop ? " bad" : "");
+    $("l-wdog").className = "lamp" + (s.wdog ? " bad" : "");
+  }
+  renderPreview(m.preview);
+  $("jog").textContent = m.jog.map((v) => v.toFixed(0)).join(", ");
+  $("fly").textContent = m.fly;
+  $("drive").textContent = m.drive.map((v) => (v * 100).toFixed(0)).join(", ");
+  $("mcu-warn").textContent = m.mcu_warning ? "⚠ " + m.mcu_warning : "";
+  $("mcu-warn").style.display = m.mcu_warning ? "block" : "none";
+  if (m.last_error) toast(m.last_error);
+}
+
+function renderPreview(pv) {
+  const el = $("pred");
+  if (!pv) { el.textContent = "預估落點：–"; el.className = ""; return; }
+  let t;
+  if (!pv.ok) t = "預估落點：球到不了網板（角度或轉速太低）";
+  else {
+    const side = (v, pos, neg) => Math.abs(v) < 1 ? "" : `${v > 0 ? pos : neg} ${Math.abs(v).toFixed(0)} cm`;
+    const off = [side(pv.off_cm[0], "偏右", "偏左"), side(pv.off_cm[1], "偏上", "偏下")].filter(Boolean).join("、");
+    t = pv.inside ? `預估落點：✓ 會進「${pv.label}」` : `預估落點：✗ 不會進（最近的是「${pv.label}」）`;
+    if (off) t += `，離孔心${off}`;
+  }
+  if (!pv.fly_on) t += `（飛輪沒開，先用 ${preset} rpm 估）`;
+  el.textContent = t;
+  el.className = pv.ok && pv.inside ? "in" : "out";
+}
+
+// ── 鍵盤 ─────────────────────────────────────────
+document.addEventListener("keydown", (e) => {
+  if (e.target.tagName === "INPUT") return;
+  keys.add(e.code);
+  if (e.repeat) return;
+  if (e.code === "Space") { fireReq = true; e.preventDefault(); }
+  else if (e.code === "KeyR") fly = fly > 0 ? 0 : preset;
+  else if (e.code === "KeyQ") fly = Math.max(0, fly - 100);
+  else if (e.code === "KeyE") fly = Math.min(4000, (fly || preset - 100) + 100);
+  else if (e.code === "KeyX") { fly = 0; send({ t: "cmd", name: "stop" }); }
+  else if (e.code === "Escape") { fly = 0; send({ t: "cmd", name: "estop" }); }
+  if (e.code.startsWith("Arrow")) e.preventDefault();
+});
+document.addEventListener("keyup", (e) => keys.delete(e.code));
+window.addEventListener("blur", () => keys.clear());       // 切走視窗 → 放開所有鍵（安全）
+
+// ── 讀輸入（鍵盤 + 搖桿）─────────────────────────
+const dz = (v) => Math.abs(v) < 0.12 ? 0 : Math.sign(v) * ((Math.abs(v) - 0.12) / 0.88) ** 2;
+function readInput() {
+  let p = 0, y = 0, fwd = 0, side = 0, rot = 0, fine = keys.has("ShiftLeft") || keys.has("ShiftRight");
+  if (keys.has("KeyW")) p += 1;
+  if (keys.has("KeyS")) p -= 1;
+  if (keys.has("KeyD")) y += 1;
+  if (keys.has("KeyA")) y -= 1;
+  if (keys.has("ArrowUp")) fwd += 1;
+  if (keys.has("ArrowDown")) fwd -= 1;
+  if (keys.has("ArrowRight")) side += 1;
+  if (keys.has("ArrowLeft")) side -= 1;
+  if (keys.has("Period")) rot += 0.5;                              // 原地轉用半速，比較好控制
+  if (keys.has("Comma")) rot -= 0.5;
+  let src = "鍵盤";
+  const pads = navigator.getGamepads ? Array.from(navigator.getGamepads()).filter(Boolean) : [];
+  if (pads.length) {
+    const g = pads[0];
+    $("pad").textContent = "搖桿：" + g.id;
+    const lx = dz(g.axes[0] || 0), ly = -dz(g.axes[1] || 0);        // 左搖桿：前後 / 平移
+    const rx = dz(g.axes[2] || 0), ry = -dz(g.axes[3] || 0);        // 右搖桿：瞄準
+    const btn = (i) => g.buttons[i] && g.buttons[i].pressed;
+    if (lx || ly) { fwd = ly; side = lx; src = "搖桿"; }
+    if (rx || ry) { p = ry; y = rx; src = "搖桿"; }
+    if (btn(14) || btn(15)) { rot = btn(15) ? 0.5 : -0.5; src = "搖桿"; }   // 十字鍵左右：原地轉
+    if (btn(4)) fine = true;
+    const rt = g.buttons[7] ? g.buttons[7].value : 0;
+    if (rt > 0.5 && fly === 0) fly = preset;
+    if (btn(0) && !lastPadFire) fireReq = true;
+    lastPadFire = btn(0);
+    if (btn(1) && !lastPadStop) { fly = 0; send({ t: "cmd", name: "stop" }); }
+    lastPadStop = btn(1);
+  }
+  $("src").textContent = src;
+  const k = maxDps * (fine ? 0.25 : 1), kd = fine ? 0.25 : 1;
+  return { p: p * k, y: y * k, fwd: fwd * kd, side: side * kd, rot: rot * kd };
+}
+
+// 20 Hz 送輸入（駕駛才送）；頁面被切到背景時送 0（伺服器 deadman 也會擋）
+setInterval(() => {
+  if (role !== "driver") return;
+  const i = document.hidden ? { p: 0, y: 0, fwd: 0, side: 0, rot: 0 } : readInput();
+  send({ t: "input", jog: [i.p, i.y], drive: [i.fwd, i.side, i.rot], fly: fly, fire: fireReq });
+  fireReq = false;
+}, 50);
+setInterval(() => send({ t: "ping", ts: performance.now() }), 1000);
+
+document.querySelectorAll("button[data-cmd]").forEach((b) =>
+  b.addEventListener("click", () => { if (b.dataset.cmd === "stop" || b.dataset.cmd === "estop") fly = 0;
+                                      send({ t: "cmd", name: b.dataset.cmd }); }));
+$("btn-claim").addEventListener("click", () => send({ t: "claim", force: true }));
+connect();
+</script>
+</body>
+</html>

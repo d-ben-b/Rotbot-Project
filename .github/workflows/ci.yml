@@ -19,5 +19,24 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+      - name: C++ compiler for the firmware simulator (SIL)
+        run: g++ --version
       - name: Run tests
         run: pytest -q
+
+  firmware:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: arduino/setup-arduino-cli@v2
+      - name: Compile for NUCLEO-G474RE（STM32duino；出廠設定 + 全感測設定）
+        env:
+          ARDUINO_BOARD_MANAGER_ADDITIONAL_URLS: https://github.com/stm32duino/BoardManagerFiles/raw/main/package_stmicroelectronics_index.json
+        run: |
+          arduino-cli core update-index
+          arduino-cli core install STMicroelectronics:stm32
+          FQBN=STMicroelectronics:stm32:Nucleo_64:pnum=NUCLEO_G474RE
+          arduino-cli compile --fqbn $FQBN --warnings all firmware/rotbot_mcu
+          arduino-cli compile --fqbn $FQBN --warnings all \
+            --build-property "compiler.cpp.extra_flags=-DFLY_HAS_TACH=1 -DFEED_HAS_HOME_SWITCH=1 -DESTOP_SENSE_ENABLED=1 -DVBAT_ENABLED=1" \
+            firmware/rotbot_mcu

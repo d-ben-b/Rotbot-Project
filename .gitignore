@@ -230,6 +230,5 @@ datasets
 data
 models
 runs
-rotbot
 
 *.pt

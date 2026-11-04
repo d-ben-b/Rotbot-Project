@@ -30,8 +30,8 @@ def run_match(cfg: Config, rng: np.random.Generator, correct: bool = True) -> Ma
     world = BallisticWorld(cfg, rng)
     cells = strategy.grid_cells(cfg)
 
-    # 靈敏度以中心格為基準，用模擬世界的無誤差投射估計
-    j_pitch, j_yaw = ballistics.estimate_sensitivity(world.shoot, cells[4], cfg)
+    # 靈敏度以中心格為基準，用腦內模型估計（實機同樣只能用模型）
+    j_pitch, j_yaw = ballistics.estimate_sensitivity(ballistics.model_shoot(cfg), cells[4], cfg)
     calib = AdaptiveCalibrator(cfg.calibration, j_pitch, j_yaw, n_cells=len(cells))
 
     errs, hits, bonus_hits = [], [], []

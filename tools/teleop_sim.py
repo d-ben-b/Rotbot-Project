@@ -37,7 +37,6 @@ from rotbot.perception.localize import HoleAim, localize_holes
 from rotbot.sim import pybullet_camera as pcam
 from rotbot.sim.pybullet_world import PyBulletWorld
 from rotbot.sim.robot_spec import load_robot_spec
-from rotbot.sim.world import BallisticWorld
 
 C_TARGET = (60, 220, 235)
 C_TEXT = (240, 240, 240)
@@ -119,7 +118,7 @@ class TeleopSim:
         # 決策 / 校正（自動模式用）
         self.planner = ShotPlanner(self.cfg)
         jp, jy = ballistics.estimate_sensitivity(
-            BallisticWorld(self.cfg).shoot, (0.0, self.cfg.field.grid_cy), self.cfg)
+            ballistics.model_shoot(self.cfg), (0.0, self.cfg.field.grid_cy), self.cfg)
         self.calib = AdaptiveCalibrator(self.cfg.calibration, jp, jy, n_cells=12)
         self.total_points = 0
         self.n_shots = 0

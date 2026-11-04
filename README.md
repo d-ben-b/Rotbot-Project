@@ -6,53 +6,61 @@
 以 `hal` 抽象層隔離真硬體與 `sim` 模擬 —— 硬體到位前先在模擬裡跑通整條閉迴路，
 硬體到了只換底層實作，主邏輯不動。
 
-> 規劃與里程碑見 [ROADMAP.md](ROADMAP.md)。目前處於 **P0（骨架建置）已完成**。
+> **先看這兩份**：[我要做什麼（燒錄、接線、量球速…）](docs/00_todo.md)、[怎麼確認軟體是對的](docs/00_verify.md)。
+>
+> 進度與數字見 [PROGRESS.md](PROGRESS.md)；規劃見 [ROADMAP.md](ROADMAP.md)。
+> 2026-10-25 起投球距離 **6 m**：[docs/six_meter_reassessment.md](docs/six_meter_reassessment.md)；
+> 硬體到位前後的驗證計畫：[docs/hardware_bringup_plan.md](docs/hardware_bringup_plan.md)。
 
 ## 專案結構
 
 ```text
 rotbot/
-  config.py          # 集中式設定（讀 configs/field.yaml）
-  hal.py             # 硬體抽象層：Camera / ActuatorLink 介面
-  perception/
-    pose.py          # PnP 網框位姿解算（距離/方位/傾角）✅
-    detector.py      # YOLO 偵測介面（P1 實作）
-    camera.py        # RealCamera（P5）
-  decision/
-    ballistics.py    # 拋體瞄準模型（無阻力解析解）✅
-    calibration.py   # 線上自適應校正「找手感」✅
-    strategy.py      # 九宮格幾何、目標選擇
-  actuation/
-    protocol.py      # UART 指令協定
-    link.py          # MockArduino ✅ / SerialArduino（P5）
-  sim/
-    world.py         # 真實拋體物理（含空氣阻力 RK4）✅
-    match.py         # 模擬一場 27 顆的閉迴路 ✅
-    camera.py        # SimCamera 替身
-  pipeline/
-    loop.py          # 主迴圈（P4）
-    state_machine.py # 賽制狀態機（P3）
-configs/field.yaml   # 場地/球/機構/校正 參數
-tests/               # pytest
+  config.py            # 集中式設定（讀 configs/field.yaml）
+  hal.py               # 硬體抽象層：Camera / ActuatorLink 介面
+  perception/          # detector(YOLO) → localize(整板 PnP) → pose；camera(make_camera / SharedCamera)
+                       # imx296(機上相機 V4L2 + ISP + 去畸變) / intrinsics(棋盤格內參標定)
+  decision/            # ballistics(含阻力瞄準) / calibration(線上校正, 可存檔) / strategy / frames(轉塔運動學)
+  actuation/           # protocol(Orin↔MCU 協定 v1) / link(SerialMCU / MockArduino)
+  pipeline/            # loop(自主主迴圈 + AutonomousRunner) / state_machine(60 秒自主鎖定)
+  teleop/              # 手動操控 Web 伺服器 + 控制頁（鍵盤 / 搖桿）+ aim_preview(預估落點)
+  sim/                 # world(真實物理) / scene(合成影像) / closed_loop / twin(數位孿生) / pybullet_*
+firmware/rotbot_mcu/   # MCU 韌體：NUCLEO-G474RE（STM32duino）；同一份原始碼也在電腦上跑成模擬器：firmware/host
+configs/               # field.yaml（場地/球/機構/校正）、robot.yaml（機器人幾何）
+tools/                 # 各種可直接執行的工具（見下）
+docs/                  # 00_todo / 00_verify（先看）、6 m 評估、MCU 連線、網路操控、相機（imx296_jetson）
+tests/                 # pytest（93 項 + 2 項只在 Linux / 實體相機跑）
 ```
 
-## 安裝與測試
+## 安裝
 
 ```bash
-pip install -r requirements.txt
+uv venv .venv --python 3.12            # 或 python -m venv（CI 用 3.12）
+uv pip install -r requirements.txt     # 核心 + 測試
+# GPU（YOLO 訓練/推論）：只要 NVIDIA 驅動，不必裝 CUDA Toolkit
+uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130
+uv pip install -r requirements-gpu.txt
+# 韌體模擬器需要 C++ 編譯器：Linux/Orin 內建 g++；Windows 沒有的話 `uv pip install ziglang`
 pytest -q
 ```
 
-## 快速試跑（模擬一場比賽）
+Jetson 不要裝 `requirements.txt`（會換掉 JetPack 的 numpy 和 OpenCV），改用 `requirements-jetson.txt`，步驟見 [docs/00_todo.md](docs/00_todo.md) 第 6 步。
 
-```python
-from rotbot.config import load_config
-from rotbot.sim.match import monte_carlo
+## 常用工具
 
-cfg = load_config()
-h_on, h_off, b_on = monte_carlo(cfg, n_trials=100)
-print(f"一般框命中：校正前 {h_off.mean():.0%} → 校正後 {h_on[:,3:].mean():.0%}")
-print(f"加分格命中（校正後，第4顆起）：{b_on[:,3:].mean():.0%}")
-```
+| 指令 | 用途 |
+|---|---|
+| `python -m tools.robot_main --sim` | **比賽主程式**（網頁按開始 → 60 秒 AI 自主 → 可切手動；畫面標出預估落點）；`--sim` = 韌體模擬器 + 數位孿生；Jetson 上 `--mcu /dev/ttyACM0`（相機自動用 IMX296） |
+| `python -m tools.run_autonomous --sim` | 自主主迴圈跑一整場並印逐球明細 |
+| `python -m tools.teleop_web --mcu sil --camera sim` | 手動操控網頁（路由器區網 / 鍵盤 / 搖桿） |
+| `python -m tools.mcu_link_test --sil` | Orin↔MCU 連線驗證（`--port COM5` / `/dev/ttyACM0` 打實機） |
+| `python -m tools.mcu_sil` | 建置並執行韌體模擬器（`socket://127.0.0.1:5760`） |
+| `python -m tools.reassess_6m` | 6 m 全部誤差與假設重算（模擬/合成） |
+| `python -m tools.fit_ballistics shots.csv` | 打牆資料擬合 v0 / Cd / 安裝偏差 |
+| `python -m tools.bench_pipeline` | 感知+決策延遲 + 量到的距離（Orin 上加 `--camera cfg`、`--export-trt`） |
+| `python -m tools.capture_dataset --prelabel models/grid_holes_yolo11n.pt --out …` | 實拍收集 + 預標註（微調用） |
+| `python3 -m tools.camera_check` / `calibrate_camera` | Jetson：IMX296 取像檢查 / 重新標定內參（見 docs/imx296_jetson.md） |
+| `python -m tools.train_detector` / `eval_perception` | 訓練 / 評估 YOLO |
+| `python -m tools.run_match --trials 50` | 閉迴路蒙地卡羅（真值+誤差感知，快） |
 
-原型視覺化腳本仍保留在 [presentation/](presentation/)（收斂曲線、命中率、PnP 示意圖）。
+原型視覺化腳本仍保留在 [presentation/](presentation/)。

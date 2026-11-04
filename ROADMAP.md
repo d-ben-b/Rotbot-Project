@@ -111,14 +111,16 @@ rotbot/
 **DoD：** ✅ 給定「感知每孔量測」，輸出下一發要投哪個孔與俯仰/水平指令（加分優先、剩彈管理）。
 > 註：飛輪轉速反解與落點收斂驗證併入 P4 閉迴路。
 
-### P3 — 致動與通訊（約 1–2 週）
-- [ ] `actuation/protocol.py`：UART 指令 frame（俯仰/水平/飛輪速/觸發），含 checksum、ack、逾時
-- [ ] `actuation/link.py` + `MockArduino`：模擬 Arduino 端回應，驗證協定
-- [ ] `pipeline/state_machine.py`：賽制狀態機 — 啟動 → 前 60 秒全自主 → 後半場 → **紅色急停/安全**
-- [ ] 前 60 秒「無無線」路徑驗證（純機上視覺，符合規則）
-- [ ] 安全與失效處理：偵測不到目標、通訊逾時、超出射程時的行為
+### P3 — 致動與通訊（2026-10-25 核心完成，見 docs/mcu_orin_link.md）
+- [x] `actuation/protocol.py`：協定 v1（ASCII 一行一幀 + CRC-8、SEQ 去重、NAK 錯誤碼、事件）
+- [x] `actuation/link.py`：`SerialMCU`（逾時重送、STAT 輪詢兼心跳、等 BOOT、HAL `send`）；`MockArduino` 保留給閉迴路模擬
+- [x] `firmware/rotbot_mcu`：Arduino Uno 韌體（梯形速度、飛輪前饋+電壓補償+PI、推球、看門狗、急停）；Uno 編譯 40%/32%
+- [x] 韌體模擬器 `firmware/host` + `tools/mcu_link_test.py`：同一份韌體在電腦上跑，21/21 項通過
+- [x] `pipeline/state_machine.py`：IDLE → 前 60 秒 AUTONOMOUS（手動鎖定）→ MANUAL ⇄ AUTONOMOUS → FINISHED；ESTOP
+- [x] 安全與失效處理：MCU 看門狗、網頁 deadman / 斷線停機、未 ZERO 不准動、未就緒不准發射、卡彈 FAULT
+- [ ] 真 Arduino 上跑 L2–L4（需要板子；工具已備）
 
-**DoD：** 主邏輯能透過協定對 MockArduino 下完整一發指令並確認回應；狀態機涵蓋賽制與安全。
+**DoD：** ✅ 主邏輯透過協定對（模擬器中的真韌體）下完整一發並確認 FIRED；狀態機涵蓋賽制與安全。
 
 ### P4 — 系統整合：模擬閉迴路（核心完成）
 - [x] `sim/closed_loop.py`：串起 感知(真值+雜訊) → 決策(plan_next_shot) → 致動(AimCommand→MockArduino)
@@ -128,16 +130,21 @@ rotbot/
 - [x] 整合測試納入 CI（校正提升成績、通訊路徑）
 - [x] 感知改接「真 YOLO + render 影像」的重版閉迴路（`run_closed_loop_render`，`--render`）
       外參由場景真實板位姿反算確保幾何一致；真 YOLO 單場 總分52/命中93%/加分33%
-- [ ] 效能量測：各階段耗時，預估 Orin 延遲預算（併 P5 用真模型量；render 版一場約 30s）
+- [x] 效能量測（PC）：`tools/bench_pipeline.py` 偵測 12.6 / PnP 0.6 / 決策 0.3 ms；Orin 版待 P5
+- [x] 自主主迴圈 `pipeline/loop.py` + 數位孿生 `sim/twin.py`：主迴圈 → SerialMCU → 韌體模擬器 → 彈道世界，27 球 1.33 s/球
+- [x] 比賽主程式 `tools/robot_main.py`：網頁「開始」→ 60 秒 AI → 切手動（同一程式共用 MCU 與相機）
+- [x] 6 m 重評估（`tools/reassess_6m.py`、docs/six_meter_reassessment.md）
 
 **DoD：** ✅ 一鍵跑完整場模擬並產出成績報告。truth+noise 版（30 場）：校正後 總分51/命中92%/加分32% vs 未校正 45/83%/4%；真 render+YOLO 版單場 52/93%/33%。
 
-### P5 — 硬體到位後整合（硬體 milestone 觸發）
-- [ ] 相機標定：實拍棋盤格求真實內參與畸變，替換 `calib/`
-- [ ] `RealCamera` / `RealArduino` 實作，抽換掉 Sim/Mock
-- [ ] Jetson Orin 部署：YOLO → TensorRT 匯出、FP16/INT8、實測 FPS 與延遲
-- [ ] 用**真實影像**微調/重訓 YOLO（合成→真實的域差距修正）
-- [ ] 硬體在環 (HIL)：先手動下指令驗證機構、再接自主迴路
+### P5 — 硬體到位後整合（硬體 milestone 觸發；步驟見 docs/hardware_bringup_plan.md）
+- [x] 相機定案 IMX296 + 6 mm、實拍標定 0.71 px → `field.yaml` 的 `camera_calib`（實機去畸變）與 `camera:`（模擬用同一組針孔內參）
+- [x] `IMX296Camera`（V4L2 + ISP + 去畸變，已在 Jetson 取像）/ `RealCamera` / `SharedCamera` / `SerialMCU` 實作完成；工具 `--camera cfg` 預設用 IMX296
+- [x] 手動操控的預估落點（`teleop/aim_preview.py`）：畫面標記 + 網板小地圖
+- [ ] Jetson Orin 部署：`tools/bench_pipeline.py --export-trt`（TensorRT FP16）實測延遲
+- [ ] 用**真實影像**微調 YOLO（`tools/capture_dataset.py` 預標註 → 從 6 m 合成模型微調）
+- [ ] 硬體在環 (HIL)：`mcu_link_test --allow-motion` → `run_autonomous --twin`（真轉塔+孿生）→ 整機
+- [ ] 打牆擬合 v0 / Cd / 安裝偏差（`tools/fit_ballistics.py`），寫回 YAML 與校正暖機檔
 
 **DoD：** 實機能在桌面環境跑完「看→算→投」單發閉迴路。
 
@@ -176,6 +183,6 @@ rotbot/
 ## 5. 目前進度
 
 - ✅ **P0 完成**（commit `36668bb`）：骨架、HAL、config、原型模組化、14 個測試 + CI。
-- ▶ **P1 進行中**：兩個主幹決策已定案（見 §4），下一步從 `sim/scene.py` 合成場景產生器開始。
+- ✅ **P1、P2 完成**；**P3、P4 核心完成**（2026-10-25，6 m 設計點）；**P5 等硬體**——詳見 PROGRESS.md。
 
 > 進度追蹤：完成一項就勾一個 checkbox；每個 Phase 收尾時對照 DoD 再往下走。

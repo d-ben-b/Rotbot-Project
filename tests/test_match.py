@@ -13,9 +13,11 @@ def test_calibration_improves_bonus_hit_rate():
     cfg = load_config()
     h_on, h_off, b_on = monte_carlo(cfg, n_trials=20)
 
-    # 一般框本來就寬鬆，兩者都該不錯
-    assert h_off.mean() > 0.5
-    # 收斂後（第 4 顆起）加分格命中率應明顯優於未校正的一般表現
+    # 6m：系統偏差（打滑 4%、阻力係數估錯 10%、安裝偏差）使未校正連一般框都常打不進（實測 ~25%），
+    # 校正收斂後（第 4 顆起）一般框應大幅提升
+    assert h_on[:, 3:].mean() > 0.8
+    assert h_on[:, 3:].mean() > h_off.mean() + 0.3
+    # 收斂後加分格（Ø20）命中率應明顯大於 0
     bonus_after = b_on[:, 3:].mean()
     assert bonus_after > 0.3
 

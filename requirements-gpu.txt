@@ -1,0 +1,8 @@
+# YOLO 訓練/推論（GPU）。不需要另外安裝 CUDA Toolkit：PyTorch 的 CUDA 版 wheel 自帶執行環境，只要 NVIDIA 驅動。
+# 2026-10-25 本機（RTX 4050 Laptop、驅動 621.01 / CUDA 13.5、Python 3.12）實測可用：
+#   uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130
+#   uv pip install -r requirements-gpu.txt
+# （先裝 torch 再裝 ultralytics，避免被換成 CPU 版 torch）
+# Jetson Orin：不用這份。用 NVIDIA 提供的 JetPack 版 torch，再 pip3 install --no-deps ultralytics==8.4.188
+# （見 requirements-jetson.txt）；TensorRT 隨 JetPack。
+ultralytics>=8.3
