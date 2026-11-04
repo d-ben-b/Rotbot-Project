@@ -15,7 +15,7 @@
 
 | # | 要確認的事 | 指令 | 應該看到 |
 | --- | --- | --- | --- |
-| 1 | 程式整體沒壞 | `python -m pytest -q` | `93 passed, 2 skipped`（約 1.5 分鐘；skip 的 2 項只在 Linux 或接著實體相機時才跑） |
+| 1 | 程式整體沒壞 | `python -m pytest -q` | `94 passed, 2 skipped`（約 1.5 分鐘；skip 的 2 項只在 Linux 或接著實體相機時才跑） |
 | 2 | Orin 和 MCU 之間的指令都對（同一份韌體在電腦上模擬） | `python -m tools.mcu_link_test --sil` | `結果：PASS 25  FAIL 0` |
 | 3 | AI 能自己投完一整場 | `python -m tools.run_autonomous --sim` | 約 35 秒後印出 `共 27 球、韌體推球計數 27`，以及 `得分 50、命中 24/27` 左右 |
 | 4 | 網頁操控和預估落點 | `python -m tools.robot_main --sim`，瀏覽器開 <http://localhost:8080> | 照下面 B 節檢查 |
