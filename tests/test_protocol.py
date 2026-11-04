@@ -66,6 +66,15 @@ def test_resets_on_open_by_usb_vendor(monkeypatch):
     assert resets_on_open("socket://127.0.0.1:5760") is True
 
 
+def test_open_without_reply_explains_and_closes():
+    """開埠後 PING 沒回應：錯誤訊息提示查占用 / 按 RESET，並關掉埠（不留讀取緒占著）。"""
+    from rotbot.actuation.link import LinkError, SerialMCU
+    mcu = SerialMCU("loop://", timeout=0.02, retries=0, boot_wait=0.0)
+    with pytest.raises(LinkError, match="RESET"):
+        mcu.open()
+    assert mcu._ser is None and not mcu._threads
+
+
 def test_reboot_detected_from_status_without_boot_event():
     """EV BOOT 那行被弄壞時，靠狀態「已歸零 → 未歸零（不是急停）」判斷重開機；急停不算，且舊角度作廢。"""
     from rotbot.actuation.link import SerialMCU

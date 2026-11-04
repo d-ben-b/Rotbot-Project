@@ -209,6 +209,19 @@ v0 逐發抖動 ≤ 0.1 m/s；練習→比賽轉速漂移 < 1%（否則需要比
 > **append-only**：每次更新只**新增**條目、不改舊條目，保留數字與決策的演進供工作日誌追蹤。
 > 上方 §0–§8 為「最新快照」；本區為「歷史紀錄」。新到舊排列。
 
+### 2026-11-04（續 9）：Orin 上 PING 逾時；序列埠改成獨占
+
+- 現象：Orin 更新到 `17e5406` 後，連續 3 次跑 `teleop_web --mcu /dev/ttyACM0`，開埠時 `PING 逾時（4 次 × 150 ms）`。
+  更新前同一條指令可以連上。這次更新只改了 `server.py`，沒有改連線程式。
+- 推測原因：舊的 `teleop_web` 還在另一個 SSH 視窗裡執行。
+  - Linux 允許兩個程式同時開同一個序列埠，MCU 的回覆被舊程式的讀取緒讀走。
+  - Windows 的 COM 埠本來就是獨占，所以在這台電腦上不會出現。
+  - 待使用者用 `pgrep -af tools` 確認。
+- 修改：
+  - `SerialMCU.open()` 改用 `exclusive=True`。Linux 上 pyserial 會加 `flock`，第二個新版程式會直接開不起來；只對新版程式之間有效。
+  - 開埠後 PING 失敗時，先關閉序列埠，錯誤訊息加上「查占用（`pgrep -af tools`）/ 按 Nucleo RESET」。
+- 測試：新增 `test_open_without_reply_explains_and_closes`（`loop://` 不回應 → LinkError 含提示、埠已關）。全套 **95 passed、2 skipped**。
+
 ### 2026-11-04（續 8）：Orin 上手把實測；發射被拒時寫出原因
 
 - 實機：手把 → 筆電瀏覽器 → SSH 通道 → Wi-Fi → Orin（`teleop_web --mcu /dev/ttyACM0 --rpm 900`）→ Nucleo。
