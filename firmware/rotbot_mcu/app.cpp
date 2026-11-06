@@ -260,7 +260,7 @@ void App::handleLine(char* line) {
     for (uint8_t i = 0; i < 4; ++i)
       if (labs(v[i]) > 1000) { sendAck(seq, proto::E_RANGE); return; }
     if (estop_) { sendAck(seq, proto::E_ESTOP); return; }
-    for (uint8_t i = 0; i < 4; ++i) wheel_target_[i] = (int16_t)v[i];
+    for (uint8_t i = 0; i < 4; ++i) wheel_target_[i] = (int16_t)(v[i] * WHEEL_MAX_PERMILLE / 1000);
     drive_rx_ms_ = now;
     sendAck(seq, proto::E_OK);
   } else if (!strcmp(cmd, "WHL")) {             // 四輪輸出軸轉速 × 10
