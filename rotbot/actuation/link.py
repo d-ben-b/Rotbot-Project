@@ -113,7 +113,8 @@ class SerialMCU(ActuatorLink):
     # ── 連線 ─────────────────────────────────────────
     def open(self, wait_boot: bool = True) -> "SerialMCU":
         import serial  # 局部 import：無硬體環境（CI 模擬）不必安裝 pyserial 也能用 Mock
-        self._ser = serial.serial_for_url(self.url, baudrate=self.baud, timeout=0.05)
+        # exclusive：Linux 預設允許兩個程式同時開同一個埠，回覆會被另一個程式讀走 → 改成第二個直接開不起來
+        self._ser = serial.serial_for_url(self.url, baudrate=self.baud, timeout=0.05, exclusive=True)
         self._stop.clear()
         self._opened = False                       # 開埠造成的重開機（Uno、模擬器）不算
         t = threading.Thread(target=self._reader, name="mcu-reader", daemon=True)
@@ -122,7 +123,12 @@ class SerialMCU(ActuatorLink):
         self.resets_on_open = resets_on_open(self.url)
         if wait_boot and self.resets_on_open:      # since=0：讀取緒啟動後就算（BOOT 可能已先到）
             self.wait_event("BOOT", timeout=self.boot_wait, since=0, raise_on_timeout=False)
-        self.ping()                                # 確認雙向通
+        try:
+            self.ping()                            # 確認雙向通
+        except LinkError as e:
+            self.close()
+            raise LinkError(f"{e}：MCU 沒回應。先確認沒有其他程式開著 {self.url}"
+                            "（Linux：pgrep -af tools），再按 Nucleo 的黑色 RESET") from e
         self._opened = True
         if self.poll_hz > 0:
             p = threading.Thread(target=self._poller, name="mcu-poller", daemon=True)

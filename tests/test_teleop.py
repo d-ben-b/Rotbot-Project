@@ -110,6 +110,39 @@ def test_teleop_rules_with_fake_mcu():
     asyncio.run(scenario())
 
 
+def test_teleop_explains_fire_not_ready():
+    """FIRE 被拒（NOT_READY）時，頁面顯示缺哪個條件，不是只有錯誤碼。"""
+    from rotbot.actuation.link import NakError
+    from rotbot.actuation.protocol import E_NOT_READY, F_FLY_OK, F_HOMED, Status
+
+    class NotReadyMCU(FakeMCU):
+        def fire(self):
+            raise NakError("FIRE", E_NOT_READY)
+
+    async def scenario():
+        mcu = NotReadyMCU()
+        server = TeleopServer(mcu=mcu, camera=None, sm=MatchStateMachine(auto_s=0.0, match_s=30))
+        runner, port = await _serve(server)
+        try:
+            async with aiohttp.ClientSession() as s:
+                ws = await s.ws_connect(f"http://127.0.0.1:{port}/ws")
+                await ws.send_json({"t": "cmd", "name": "start"})
+                await ws.send_json({"t": "cmd", "name": "manual"})
+                await _wait(ws, lambda m: m["t"] == "state" and m["game"] == "MANUAL")
+                for flags, rpm_t, want in ((F_FLY_OK, 900, "還沒歸零"), (F_HOMED, 900, "飛輪還沒到速"),
+                                           (F_HOMED, 0, "飛輪沒開")):
+                    mcu.status = Status(flags, -5.0, 0.0, -1, rpm_t, 0, E_NOT_READY, 0)
+                    await ws.send_json({"t": "input", "jog": [0, 0], "fly": rpm_t, "fire": True})
+                    n = await _wait(ws, lambda m: m["t"] == "notice" and "不能發射" in m["msg"])
+                    assert want in n["msg"] and "NOT_READY" not in n["msg"], n["msg"]
+                    assert want in server.last_error
+                await ws.close()
+        finally:
+            await runner.cleanup()
+
+    asyncio.run(scenario())
+
+
 def test_teleop_end_to_end_with_firmware():
     from tools.mcu_sil import CompilerNotFound, SilProcess, build
     try:
