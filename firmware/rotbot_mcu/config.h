@@ -85,7 +85,7 @@
 #define WHEEL_INVERT 0x0C              // bit i = 馬達 i 反轉（指令與編碼器一起反）。預設右側 M3、M4 裝成鏡像
 #endif
 #ifndef WHEEL_ENC_INVERT
-#define WHEEL_ENC_INVERT 0x00          // bit i = 只反編碼器計數（A/B 接反時用）
+#define WHEEL_ENC_INVERT 0x06          // bit i = 只反編碼器計數（A/B 接反時用）。11/06 實測：M2、M3 往前轉時計數為負
 #endif
 #ifndef WHEEL_ENC_PPR
 #define WHEEL_ENC_PPR 11               // 編碼器每轉脈衝（馬達軸、單相）
