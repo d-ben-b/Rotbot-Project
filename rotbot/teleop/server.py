@@ -32,6 +32,7 @@ from pathlib import Path
 import numpy as np
 from aiohttp import WSMsgType, web
 
+from ..actuation.protocol import E_NOT_READY
 from ..config import ChassisConfig
 from ..pipeline.state_machine import GameState, MatchStateMachine
 
@@ -121,6 +122,7 @@ class TeleopServer:
         self.last_drive_t = 0.0
         self.last_fly = 0
         self.last_error = ""
+        self.last_nak = None                # 最近一次 NAK 的錯誤碼（None = 不是 NAK）
         self.mcu_warning = ""
         self._reboots_seen = 0
         self.cmd_ms: collections.deque[float] = collections.deque(maxlen=200)
@@ -143,7 +145,30 @@ class TeleopServer:
             return True
         except Exception as e:                       # LinkError / NakError
             self.last_error = f"{name}: {e}"
+            self.last_nak = getattr(e, "code", None)
             return False
+
+    def _fire_blockers(self) -> str:
+        """FIRE 被拒（NOT_READY）時，依最近的 MCU 狀態列出還缺哪些條件（韌體 App::ready()）。"""
+        s = getattr(self.mcu, "status", None)
+        if s is None:
+            return ""
+        why = []
+        if not s.homed:
+            why.append("還沒歸零（按「重置」回待命，再按「歸零」）")
+        if s.estop:
+            why.append("急停中")
+        if s.wdog:
+            why.append("看門狗觸發")
+        if s.firing:
+            why.append("上一球還在推")
+        if s.rpm_target <= 0:
+            why.append("飛輪沒開")
+        elif not s.fly_ok:
+            why.append("飛輪還沒到速")
+        if s.moving:
+            why.append("轉塔還在動")
+        return "、".join(why)
 
     async def _safe_stop(self, why: str):
         self.last_jog, self.last_fly, self.last_drive = (0.0, 0.0), 0, (0.0, 0.0, 0.0)   # STOP 也停車輪
@@ -441,6 +466,9 @@ class TeleopServer:
         if m.get("fire"):
             if await self._mcu("fire"):
                 await self._notice(c, "發射！")
+            elif self.last_nak == E_NOT_READY and (why := self._fire_blockers()):
+                self.last_error = f"不能發射：{why}"           # 頁面一直顯示 last_error，換成看得懂的原因
+                await self._notice(c, self.last_error)
             else:
                 await self._notice(c, f"不能發射：{self.last_error}")
 
