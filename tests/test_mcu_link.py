@@ -97,6 +97,20 @@ def test_reboot_detected_and_zero_restored(sil):
         assert st.rpm_target == 1800                        # 飛輪轉速也重送了
 
 
+def test_drive_full_scaled_to_wheel_max(sil):
+    """DRIVE ±1000 縮放成 WHEEL_MAX_PERMILLE（714）：12 V 馬達接 4S 時全速約 12 V。模擬器全速 160 rpm → 約 114。"""
+    import time
+
+    from rotbot.actuation.link import SerialMCU
+    with SerialMCU(sil.url) as mcu:
+        for _ in range(15):
+            mcu.drive(1.0, 1.0, -1.0, -1.0)
+            time.sleep(0.1)
+        rpm = mcu.wheels()
+        mcu.stop()
+        assert all(100 < r < 125 for r in rpm[:2]) and all(-125 < r < -100 for r in rpm[2:]), rpm
+
+
 def test_stop_also_stops_wheels(sil):
     """STOP（操控台的停止鍵、駕駛斷線）也要讓車輪停。"""
     import time

@@ -40,7 +40,7 @@ void ArduinoHal::begin() {
   pinMode(PIN_LED, OUTPUT);
   digitalWrite(PIN_STEPPER_EN, HIGH);         // 先失能，App::begin() 再致能
 #if WHEELS_ENABLED
-  analogWriteFrequency(WHEEL_PWM_HZ);          // D6 與 M4 RPWM 共用 TIM2，頻率要一致
+  analogWriteFrequency(WHEEL_PWM_HZ);          // D6 與 M2 RPWM 共用 TIM2，頻率要一致
   beginWheels();
 #endif
   analogWrite(PIN_FLY_L, 0);

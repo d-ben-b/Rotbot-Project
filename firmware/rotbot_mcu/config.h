@@ -53,9 +53,10 @@
 #endif
 
 // ===== 車輪：BTS7960 × 4 + 霍爾編碼器（只有 Nucleo；Uno 計時器不夠）=====
-// M1 左前、M2 左後、M3 右前、M4 右後。PWM / 編碼器腳寫成 STM32duino 的 PinName，_ALTn 選定計時器：
+// M1 左前、M2 左後、M3 右前、M4 右後（以車頭方向 = 底盤綠色箭頭為準）。PWM / 編碼器腳寫成 STM32duino 的 PinName，_ALTn 選定計時器：
 //   編碼器用 TIM1/TIM4/TIM5/TIM20 的 encoder mode；TIM2/TIM3 留給 D5/D6/D9（飛輪、推球 PWM）。
-//   PWM：M1 TIM15、M2 TIM8+TIM17、M3 TIM8、M4 TIM2+TIM16，全部 WHEEL_PWM_HZ（D6 與 M4 RPWM 共用 TIM2）。
+//   PWM：M1 TIM8+TIM17、M2 TIM2+TIM16、M3 TIM15、M4 TIM8，全部 WHEEL_PWM_HZ（D6 與 M2 RPWM 共用 TIM2）。
+//   11/06 實機：接線完成後車頭定在箭頭方向，四組腳位的順序由原本的 {左前, 左後, 右前, 右後} 改成 {原 M2, 原 M4, 原 M1, 原 M3}。
 #ifndef WHEELS_ENABLED
 #if defined(ARDUINO_ARCH_STM32)
 #define WHEELS_ENABLED 1
@@ -67,31 +68,34 @@
 #define PIN_WHEEL_EN PB12      // CN10-16：四片 BTS7960 的 R_EN + L_EN（外接 10 kΩ 下拉；HIGH = 致能）
 #endif
 #ifndef WHEEL_RPWM_PINS
-#define WHEEL_RPWM_PINS {PB_14_ALT1, PC_6_ALT1, PC_8_ALT1, PB_11}   // TIM15_CH1, TIM8_CH1, TIM8_CH3, TIM2_CH4
+#define WHEEL_RPWM_PINS {PC_6_ALT1, PB_11, PB_14_ALT1, PC_8_ALT1}   // TIM8_CH1, TIM2_CH4, TIM15_CH1, TIM8_CH3
 #endif
 #ifndef WHEEL_LPWM_PINS
-#define WHEEL_LPWM_PINS {PB_15_ALT2, PA_7_ALT3, PC_9_ALT1, PA_12_ALT2}  // TIM15_CH2, TIM17_CH1, TIM8_CH4, TIM16_CH1
+#define WHEEL_LPWM_PINS {PA_7_ALT3, PA_12_ALT2, PB_15_ALT2, PC_9_ALT1}  // TIM17_CH1, TIM16_CH1, TIM15_CH2, TIM8_CH4
 #endif
 #ifndef WHEEL_ENC_A_PINS
-#define WHEEL_ENC_A_PINS {PC_0, PB_6, PA_0_ALT1, PB_2_ALT1}         // TIM1_CH1, TIM4_CH1, TIM5_CH1, TIM20_CH1
+#define WHEEL_ENC_A_PINS {PB_6, PB_2_ALT1, PC_0, PA_0_ALT1}         // TIM4_CH1, TIM20_CH1, TIM1_CH1, TIM5_CH1
 #endif
 #ifndef WHEEL_ENC_B_PINS
-#define WHEEL_ENC_B_PINS {PC_1, PB_7_ALT1, PC_12, PC_2_ALT1}        // TIM1_CH2, TIM4_CH2, TIM5_CH2, TIM20_CH2
+#define WHEEL_ENC_B_PINS {PB_7_ALT1, PC_2_ALT1, PC_1, PC_12}        // TIM4_CH2, TIM20_CH2, TIM1_CH2, TIM5_CH2
 #endif
 #ifndef WHEEL_PWM_HZ
 #define WHEEL_PWM_HZ 20000             // BTS7960 最高 25 kHz
 #endif
 #ifndef WHEEL_INVERT
-#define WHEEL_INVERT 0x0C              // bit i = 馬達 i 反轉（指令與編碼器一起反）。預設右側 M3、M4 裝成鏡像
+#define WHEEL_INVERT 0x0A              // bit i = 馬達 i 反轉（指令與編碼器一起反）。11/06 隨腳位順序調整：M2、M4
 #endif
 #ifndef WHEEL_ENC_INVERT
-#define WHEEL_ENC_INVERT 0x00          // bit i = 只反編碼器計數（A/B 接反時用）
+#define WHEEL_ENC_INVERT 0x09          // bit i = 只反編碼器計數（A/B 接反時用）。11/06 實測：M1、M4 往前轉時計數為負
 #endif
 #ifndef WHEEL_ENC_PPR
 #define WHEEL_ENC_PPR 11               // 編碼器每轉脈衝（馬達軸、單相）
 #endif
 #ifndef WHEEL_GEAR
 #define WHEEL_GEAR 56                  // 減速比 1:56 → 輸出軸每轉 11 × 4 × 56 = 2464 計數
+#endif
+#ifndef WHEEL_MAX_PERMILLE
+#define WHEEL_MAX_PERMILLE 714         // DRIVE ±1000 縮放成 ±這個值：12 V 馬達接 4S（滿電 16.8 V）→ 12 ÷ 16.8 × 1000；電源是 12 V 時改 1000
 #endif
 #ifndef WHEEL_SLEW_PER_S
 #define WHEEL_SLEW_PER_S 2000          // 輸出變化率上限（千分比/秒）：0 → 全速 0.5 s，避免電流突波讓電壓掉
