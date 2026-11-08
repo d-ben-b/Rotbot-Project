@@ -5,6 +5,8 @@ runs/
 
 # 程序化生成的網板碰撞網格快取（依需求重建）
 rotbot/sim/assets/
+# PyBullet GUI 關閉時寫出的視角設定
+0_VRDemoSettings.txt
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
