@@ -209,6 +209,27 @@ v0 逐發抖動 ≤ 0.1 m/s；練習→比賽轉速漂移 < 1%（否則需要比
 > **append-only**：每次更新只**新增**條目、不改舊條目，保留數字與決策的演進供工作日誌追蹤。
 > 上方 §0–§8 為「最新快照」；本區為「歷史紀錄」。新到舊排列。
 
+### 2026-11-08（續）：`teleop_sim` 可以錄影——裝 pybullet、ffmpeg，修 5 個問題
+
+- 環境（這台筆電）：
+  - pybullet：把 conda-forge `pybullet-3.25-py312h3d6c809_5` 的 `.pyd`、`pybullet_data`、`pybullet_utils` 和 `libzlib` 的 `zlib.dll` 複製進 `.venv\Lib\site-packages`（使用者同意）。`import pybullet` 正常、numpy 支援開啟。
+  - ffmpeg 9.0.2：`winget install --id Gyan.FFmpeg -e`。PyBullet 的 3D 視窗錄影會呼叫 ffmpeg；已開著的終端機要重開才有新的 PATH。
+- 20 s 自動模式錄影測試（`--record`）發現的問題與修改：
+
+  | 問題 | 原因 | 修改 |
+  | --- | --- | --- |
+  | 主迴圈每秒只有約 3 圈，球飛得很慢 | 相機視窗用 CPU 渲染加陰影，每張 243 ms；物理每圈固定走 4 步（1/60 s） | 顯示畫面改用 GUI 的 OpenGL 渲染（`render(gpu=True)`，24 ms）、不加雜訊（每張 28 ms）；物理依實際經過的時間推進，一圈最多補 0.25 s。感知用的影像仍用 CPU 渲染 |
+  | 相機影片 20 s 只存 57 張、播放 1.9 s | 固定以 30 fps 寫入，迴圈每秒只有約 3 圈 | 依實際時間重複寫入同一張 |
+  | 3D 影片比實際快 1.26–1.75 倍 | PyBullet 以固定 60 fps 交給 ffmpeg，GUI 每秒只重畫 34–48 次 | 錄完用 ffmpeg 依實際錄影時間重設時間軸（`_retime_video`），輸出 30 fps |
+  | 開始時自己切到自動；第一次切回手動時自己投一球 | 按鈕讀值的初始值是 1，程式的初值是 0，第一圈誤判成按下 | 建立按鈕後先讀一次初始值 |
+  | 相機畫面的孔和程式畫的橢圓偏約 25 px；`--perception yolo` 的水平角會偏約 1.6° | 投影矩陣用 `computeProjectionMatrixFOV`，主點在畫面中央；實機標定的 cx 777.7、cy 578.9 不在中央（1456×1088） | `projection_matrix` 改由 fx、fy、cx、cy 直接組 OpenGL 矩陣。主點在中央時與舊函式差 1e-7；掃視姿態紅色燈環中心與 K 投影的 b0 差 ≤ 1.2 px（GPU、CPU 渲染都是） |
+
+  - 另外：3D 視窗的預設視角改成機器人在前景、網框在後方（距離 4.5、yaw −60、pitch −12）；HUD 文字只在內容改變時更新（每次 4 ms）；新增 `--auto`（一開始就是自動模式）。
+- 修改後的 20 s 測試（模擬，truth 感知）：11 球、命中 8、16 分；3D 影片 20.33 s（實際 20.3 s）、相機影片 19.07 s。
+  錄影時迴圈每秒約 5 圈，所以相機視窗約 5 fps；不錄影時約 15 圈。3D 視窗由 PyBullet 的 GUI 執行緒重畫，不受影響。
+- 驗證：全套 **97 passed、2 skipped**（pybullet 的程式沒有自動化測試；CI 沒有 pybullet）。
+- 未確認：`pybullet_world` 設了 `COV_ENABLE_GUI 0`，錄下的 3D 影片裡沒有滑桿面板。實際視窗沒有滑桿時，在 3D 視窗按 g 切換。
+
 ### 2026-11-08：成果報告書「貳、AI 應用項目與成效評估」草稿（只改文件）
 
 - 新增 `Progress Report/成果報告書_貳_AI應用.md`，內容三項：YOLO 圓孔辨識（原理、合成資料、運作流程、成效表、限制）、Claude 產生比賽操作介面、Claude 協助配線（四個實例）。

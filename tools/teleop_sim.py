@@ -13,6 +13,7 @@
     python -m tools.teleop_sim                        # 手動起手，truth 自動感知
     python -m tools.teleop_sim --perception yolo --weights models/grid_holes_yolo11n.pt
     python -m tools.teleop_sim --no-drag              # 關空氣阻力（瞄準模型即命中，適合先看幾何）
+    python -m tools.teleop_sim --auto --record runs/video/sim.mp4   # 自動模式錄影（3D 視窗需要 ffmpeg）
 """
 from __future__ import annotations
 
@@ -45,6 +46,30 @@ C_TEXT = (240, 240, 240)
 def _scaled_cam(cam: CameraConfig, s: float) -> CameraConfig:
     return CameraConfig(fx=cam.fx * s, fy=cam.fy * s, cx=cam.cx * s, cy=cam.cy * s,
                         width=int(cam.width * s), height=int(cam.height * s))
+
+
+def _retime_video(path: str, wall_s: float):
+    """PyBullet 把 GUI 每次重畫的畫面以固定 60 fps 交給 ffmpeg；GUI 實際每秒重畫不到 60 次時
+    影片會比實際快（實測約 48 次/秒 → 快 1.26 倍）。依實際錄影時間重設時間軸，輸出 30 fps。"""
+    import os
+    import shutil
+    import subprocess
+    ff, fp = shutil.which("ffmpeg"), shutil.which("ffprobe")
+    if not (ff and fp and os.path.exists(path)):
+        print("[錄影] 找不到 ffmpeg 或 3D 影片，略過時間校正")
+        return
+    out = subprocess.run([fp, "-v", "error", "-select_streams", "v:0", "-show_entries",
+                          "stream=nb_frames", "-of", "csv=p=0", path],
+                         capture_output=True, text=True).stdout.strip()
+    if not out.isdigit() or int(out) == 0:
+        return
+    k = wall_s / (int(out) / 60.0)
+    raw = path[:-4] + "_raw.mp4"
+    os.replace(path, raw)
+    subprocess.run([ff, "-y", "-v", "error", "-i", raw, "-vf", f"setpts={k:.4f}*PTS",
+                    "-r", "30", "-pix_fmt", "yuv420p", path], check=True)
+    os.remove(raw)
+    print(f"[錄影] 3D 影片時間校正 ×{k:.2f}（{int(out)} 張 / 實際 {wall_s:.1f} s）")
 
 
 def _hole_int_index(group: str, idx: int) -> int:
@@ -104,12 +129,15 @@ class TeleopSim:
         self.robot = load_robot_spec()
         self.world = PyBulletWorld(self.cfg, self.robot, gui=True,
                                    drag=not args.no_drag, spin=not args.no_spin)
+        # 3D 視角：機器人在前景、網框在後方，看得到球的飛行（滑鼠可再調整）
+        self.world.p.resetDebugVisualizerCamera(4.5, -60, -12, [3.2, 0.0, 1.0],
+                                                physicsClientId=self.world.client)
         self.glare = args.glare
         self.show_data = not getattr(args, "no_data", False)
         self.disp_cam = _scaled_cam(self.cfg.camera, 0.5)
         self.K = self.cfg.camera.matrix()
 
-        self.mode = "manual"
+        self.mode = "auto" if getattr(args, "auto", False) else "manual"
         self.detector = None
         if args.perception == "yolo":
             from rotbot.perception.detector import YoloDetector
@@ -140,7 +168,8 @@ class TeleopSim:
             try:
                 self._vlog = self.world.p.startStateLogging(
                     self.world.p.STATE_LOGGING_VIDEO_MP4, self.record)
-                print(f"[錄影] PyBullet 3D 視窗 → {self.record}")
+                self._vlog_t0 = time.time()
+                print(f"[錄影] PyBullet 3D 視窗 → {self.record}（需要 ffmpeg 在 PATH）")
             except Exception as e:                       # 某些環境無內建編碼器 → 仍錄相機視窗
                 print(f"[錄影] 3D 視窗錄製啟動失敗（{e}）；仍會錄相機視窗")
 
@@ -154,8 +183,13 @@ class TeleopSim:
         self.b_mode = p.addUserDebugParameter("TOGGLE manual/auto", 1, 0, 1)
         self.b_reset = p.addUserDebugParameter("RESET", 1, 0, 1)
         self.b_relight = p.addUserDebugParameter("relight bonus", 1, 0, 1)
-        self._c_shoot = self._c_mode = self._c_reset = self._c_relight = 0
+        # 按鈕讀值是累計按下次數，初始值是 1（不是 0）；先讀一次，第一圈才不會誤判成按下
+        self._c_shoot = p.readUserDebugParameter(self.b_shoot)
+        self._c_mode = p.readUserDebugParameter(self.b_mode)
+        self._c_reset = p.readUserDebugParameter(self.b_reset)
+        self._c_relight = p.readUserDebugParameter(self.b_relight)
         self._hud = p.addUserDebugText("", [0, 0, 2.0], [1, 1, 1])
+        self._hud_text = ""
 
     def _clicked(self, pid, cache_attr) -> bool:
         v = self.world.p.readUserDebugParameter(pid)
@@ -288,7 +322,9 @@ class TeleopSim:
             pitch = math.radians(self.world.p.readUserDebugParameter(self.s_pitch))
             yaw = math.radians(self.world.p.readUserDebugParameter(self.s_yaw))
             eye, forward = self.world.muzzle(pitch, yaw), self.world.aim_dir(pitch, yaw)
-        img = pcam.render(eye, forward, self.disp_cam, self.world.client, glare=self.glare)
+        # 顯示用：GPU 渲染、不加感測器雜訊（雜訊每張約 28 ms）；感知用的影像在 _perceive 另外渲染
+        img = pcam.render(eye, forward, self.disp_cam, self.world.client, glare=self.glare,
+                          noise=0.0, gpu=True)
         cv2.rectangle(img, (0, 0), (img.shape[1], 34), (12, 12, 14), -1)
         cv2.putText(img, f"Robot camera [{self.mode}]", (12, 24),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, C_TEXT, 2, cv2.LINE_AA)
@@ -305,8 +341,13 @@ class TeleopSim:
                 h, w = img.shape[:2]
                 self._cam_writer = cv2.VideoWriter(
                     cp, cv2.VideoWriter_fourcc(*"mp4v"), 30, (w, h))
+                self._cam_t0, self._cam_n = time.time(), 0
                 print(f"[錄影] Robot camera → {cp}")
-            self._cam_writer.write(img)
+            # 迴圈每秒不到 30 圈時重複寫同一張，讓影片長度等於實際時間
+            due = int((time.time() - self._cam_t0) * 30) + 1
+            while self._cam_n < due:
+                self._cam_writer.write(img)
+                self._cam_n += 1
         cv2.imshow("Robot camera", img)
 
     def _draw_overlays(self, img, ov):
@@ -346,6 +387,7 @@ class TeleopSim:
     # ── 主迴圈 ───────────────────────────────────────────────
     def run(self):
         p = self.world.p
+        t_phys = time.time()
         try:
             while True:
                 if self._clicked(self.b_mode, "_c_mode"):
@@ -366,12 +408,20 @@ class TeleopSim:
                 elif self.pending is None and time.time() >= self.next_auto_t:
                     self._auto_shot()
 
-                for _ in range(4):
+                # 物理依實際經過的時間推進（球速與真實時間一致，不受迴圈快慢影響）；
+                # 一圈最多補 0.25 s，自動模式感知卡住時不會一次跳太多
+                now = time.time()
+                n = min(int((now - t_phys) / self.world.timestep), 60)
+                t_phys = now if n == 60 else t_phys + n * self.world.timestep
+                for _ in range(n):
                     self._on_events(self.world.step())
 
                 self._draw_camera()
-                p.addUserDebugText(f"{self.mode} | {self.total_points} pts | {self._hitrate()}",
-                                   [0, 0, 2.0], [1, 1, 0.4], replaceItemUniqueId=self._hud)
+                hud = f"{self.mode} | {self.total_points} pts | {self._hitrate()}"
+                if hud != self._hud_text:                  # 每次呼叫約 4 ms，只在內容改變時更新
+                    p.addUserDebugText(hud, [0, 0, 2.0], [1, 1, 0.4],
+                                       replaceItemUniqueId=self._hud)
+                    self._hud_text = hud
                 if cv2.waitKey(1) & 0xFF in (27, ord("q")):
                     break
                 time.sleep(1 / 120)
@@ -381,11 +431,14 @@ class TeleopSim:
                     self.world.p.stopStateLogging(self._vlog)
                 except Exception:
                     pass
+                wall = time.time() - self._vlog_t0
             if self._cam_writer is not None:
                 self._cam_writer.release()
                 print("[錄影] 已存檔")
             cv2.destroyAllWindows()
             self.world.disconnect()
+            if self._vlog is not None:
+                _retime_video(self.record, wall)
 
     def _reset(self):
         self.world.reset_balls()
@@ -406,6 +459,7 @@ def main():
     ap.add_argument("--glare", type=float, default=0.0, help="鏡頭眩光強度 0~1（模擬強光過曝）")
     ap.add_argument("--record", default=None,
                     help="錄製模擬影片到此 .mp4（3D 視窗）；另存 *_camera.mp4 為機器人相機視窗")
+    ap.add_argument("--auto", action="store_true", help="一開始就是自動模式（錄影時不用按 TOGGLE）")
     ap.add_argument("--no-data", action="store_true",
                     help="關閉額外的偵測資料視窗（距離/傾角/型變表）")
     args = ap.parse_args()

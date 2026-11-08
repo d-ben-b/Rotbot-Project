@@ -1,3 +1,7 @@
 # PyBullet 3D 物理沙盒（tools/teleop_sim.py）。
 # Windows + Python 3.12 沒有預編譯 wheel，需要「Microsoft C++ Build Tools」才裝得起來；Linux 直接可裝。
+# 不裝 Build Tools 的做法（2026-11-08 用在筆電上）：下載 conda-forge 的 win-64
+#   pybullet-3.25-py312h3d6c809_5.conda 與 libzlib-1.3.2-hfd05255_3.conda，解壓後把
+#   pybullet.cp312-win_amd64.pyd、pybullet_data/、pybullet_utils/、zlib.dll 複製到 .venv\Lib\site-packages。
+# 錄影（--record）的 3D 視窗要 ffmpeg 在 PATH：winget install --id Gyan.FFmpeg -e
 pybullet>=3.2
