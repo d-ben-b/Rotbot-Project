@@ -45,25 +45,91 @@ class Detector(ABC):
         """偵測影像中的圓孔，回傳 Detection 清單。"""
 
 
+def _clusters(vals: np.ndarray, gap: float) -> list[list[int]]:
+    """一維分群：排序後相鄰差 > gap 就分開。回傳由小到大的群（索引）。"""
+    order = np.argsort(vals)
+    groups: list[list[int]] = [[int(order[0])]]
+    for idx in order[1:]:
+        if vals[idx] - vals[groups[-1][-1]] > gap:
+            groups.append([int(idx)])
+        else:
+            groups[-1].append(int(idx))
+    return groups
+
+
 def _assign_main_grid(mains: list[Detection]) -> None:
-    """把 main 類偵測依空間位置就地指派 0~8（上排左→下排右）。"""
+    """把 main 類偵測依空間位置就地指派 0~8（上排左→下排右）。
+
+    先依 y 分列、依 x 分欄；分得出 3 列 × 3 欄時編號 = 列 × 3 + 欄，少一個孔或多一個框
+    （半個孔的框落在同一格）都不影響其他孔。分不出來時（例如整排在畫面外）退回逐排由左到右。
+    """
     if not mains:
         return
     centers = np.array([d.center for d in mains])
     heights = np.array([d.bbox[3] - d.bbox[1] for d in mains])
-    row_gap = 0.6 * float(np.median(heights))
-    order = np.argsort(centers[:, 1])
-    rows: list[list[int]] = [[order[0]]]
-    for idx in order[1:]:
-        if centers[idx, 1] - centers[rows[-1][-1], 1] > row_gap:
-            rows.append([idx])
-        else:
-            rows[-1].append(idx)
+    gap = 0.6 * float(np.median(heights))          # 列距 1.5、欄距 2.25 個孔徑，同孔的框差 < 0.5 個
+    rows = _clusters(centers[:, 1], gap)
+    cols = _clusters(centers[:, 0], gap)
+    if len(rows) == 3 and len(cols) == 3:
+        col_of = {i: c for c, g in enumerate(cols) for i in g}
+        for r, row in enumerate(rows):
+            for i in row:
+                mains[i].idx = 3 * r + col_of[i]
+        return
     cid = 0
     for row in rows:
         for idx in sorted(row, key=lambda i: centers[i, 0]):
             mains[idx].idx = cid
             cid += 1
+
+
+def _area(d: Detection) -> float:
+    x1, y1, x2, y2 = d.bbox
+    return max(0.0, x2 - x1) * max(0.0, y2 - y1)
+
+
+def drop_non_square(dets: list[Detection], image_shape: tuple[int, ...],
+                    min_ratio: float = 0.75, margin: float = 4.0) -> list[Detection]:
+    """刪掉寬高比不在 [min_ratio, 1/min_ratio] 的框，排編號前用；碰到畫面邊緣的框不檢查。
+
+    孔是圓的，完整孔的框接近正方形（PyBullet 掃視畫面 0.98–1.09；斜看 40° 時約 0.77）。
+    YOLO 把一個孔切成兩半時，每半個框約 0.4–0.7，中心偏掉約 1/4 個孔徑。
+    被畫面邊緣切掉的孔框本來就不是正方形，仍保留（合成評估中非正方形的框全是這種）。
+    """
+    H, W = image_shape[:2]
+    out = []
+    for d in dets:
+        x1, y1, x2, y2 = d.bbox
+        at_edge = x1 <= margin or y1 <= margin or x2 >= W - margin or y2 >= H - margin
+        w, h = x2 - x1, y2 - y1
+        if at_edge or (w > 0 and h > 0 and min_ratio <= w / h <= 1.0 / min_ratio):
+            out.append(d)
+    return out
+
+
+def drop_contained(dets: list[Detection], frac: float = 0.6,
+                   same_size: float = 0.8) -> list[Detection]:
+    """刪掉被另一個框包住的框（交集占自己面積 ≥ frac），排編號前用。
+
+    網框上的孔彼此不重疊，正常的孔框不會被包住。YOLO 有時把一個孔切成兩半各框一次
+    （PyBullet 畫面中孔後網子的格線），多出來的框會讓 assign_ids 整排編號錯開。
+    兩框面積比 ≥ same_size 時視為同一個孔的重複框（例如加分孔與亮孔各一個），留信心值高的；
+    否則留大的。回傳保留原順序。
+    """
+    kept: list[Detection] = []
+    for d in sorted(dets, key=_area, reverse=True):
+        a = _area(d)
+        for k, o in enumerate(kept):
+            ix = min(d.bbox[2], o.bbox[2]) - max(d.bbox[0], o.bbox[0])
+            iy = min(d.bbox[3], o.bbox[3]) - max(d.bbox[1], o.bbox[1])
+            if a > 0 and ix > 0 and iy > 0 and ix * iy / a >= frac:
+                if a >= same_size * _area(o) and d.confidence > o.confidence:
+                    kept[k] = d
+                break
+        else:
+            kept.append(d)
+    ids = {id(d) for d in kept}
+    return [d for d in dets if id(d) in ids]
 
 
 def assign_ids(dets: list[Detection]) -> None:
@@ -96,6 +162,7 @@ class YoloDetector(Detector):
         confs = res.boxes.conf.cpu().numpy()
         for (x1, y1, x2, y2), c, cf in zip(xyxy, clss, confs):
             dets.append(detection_from_bbox((x1, y1, x2, y2), c, float(cf)))
+        dets = drop_contained(drop_non_square(dets, image.shape))
         assign_ids(dets)
         return dets
 

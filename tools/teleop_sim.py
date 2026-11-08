@@ -131,6 +131,7 @@ class TeleopSim:
         self.pending = None            # 自動模式：飛行中那球的 (target dict, hidx, tz, ty)
         self.next_auto_t = 0.0
         self.auto_aim = None           # 自動模式最後一球的 (pitch, yaw) rad；轉塔畫在這個角度
+        self.last_dets = []            # --perception yolo：最近一次的 YOLO 偵測（全解析度座標）
         self._done_t = None            # --quit-when-done：最後一球落地的時間
         self.last_line = "manual mode - aim with sliders, press SHOOT"
 
@@ -230,6 +231,7 @@ class TeleopSim:
             img = pcam.render(eye, forward, self.cfg.camera, self.world.client,
                               glare=self.glare)
             dets = self.detector.detect(img)
+            self.last_dets = dets                        # 相機視窗畫 YOLO 框用
             aims = localize_holes(dets, self.cfg, self.K).aims
         else:
             img = pcam.render(eye, forward, self.disp_cam, self.world.client,
@@ -303,12 +305,16 @@ class TeleopSim:
         img = pcam.render(eye, forward, self.disp_cam, self.world.client, glare=self.glare,
                           noise=0.0, gpu=True)
         cv2.rectangle(img, (0, 0), (img.shape[1], 34), (12, 12, 14), -1)
-        cv2.putText(img, f"Robot camera [{self.mode}]", (12, 24),
+        yolo_view = self.detector is not None and self.mode == "auto"
+        cv2.putText(img, f"Robot camera [{self.mode}{' | YOLO' if yolo_view else ''}]", (12, 24),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, C_TEXT, 2, cv2.LINE_AA)
         cv2.putText(img, self.last_line, (12, img.shape[0] - 14),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.55, C_TARGET, 2, cv2.LINE_AA)
         ov = hole_overlays(self.cfg, eye, forward, self.disp_cam)
-        self._draw_overlays(img, ov)
+        if yolo_view:
+            self._draw_yolo(img)                   # 自動 + YOLO：畫偵測框，不畫幾何真值
+        else:
+            self._draw_overlays(img, ov)
         if self.show_data:
             self._draw_data_window(ov)
         cv2.imshow("Robot camera", img)
@@ -349,6 +355,16 @@ class TeleopSim:
         h = img.shape[0]
         cam = cv2.resize(cam_img, (round(cam_img.shape[1] * h / cam_img.shape[0]), h))
         self._write(path_both, np.hstack([img, cam]))
+
+    def _draw_yolo(self, img):
+        """自動 + YOLO：畫感知實際用的 YOLO 框、配到的孔編號、信心值（亮孔紅、加分橙、一般青）。"""
+        s = self.disp_cam.width / self.cfg.camera.width
+        for d in self.last_dets:
+            col = (60, 60, 235) if d.is_lit else ((60, 170, 235) if d.is_bonus else (200, 200, 120))
+            x1, y1, x2, y2 = [int(v * s) for v in d.bbox]
+            cv2.rectangle(img, (x1, y1), (x2, y2), col, 2, cv2.LINE_AA)
+            cv2.putText(img, f"{d.group[0]}{d.idx} {d.confidence:.2f}", (x1, y1 - 5),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, col, 1, cv2.LINE_AA)
 
     def _draw_overlays(self, img, ov):
         """在相機影像上，為每個孔畫投影橢圓 + 簡短標籤（亮孔紅、加分橙、一般青）。"""

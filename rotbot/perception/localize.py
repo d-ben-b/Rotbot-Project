@@ -119,40 +119,34 @@ def localize_holes(detections: list[Detection], cfg: Config, K: np.ndarray,
         img = np.array([detections[di].center for di in match], np.float64)
         bp = solve_board_pose(obj, img, K, dist) if len(obj) >= 4 else None
 
+    # 加分孔：用主板位姿投影 bonus 中心，就近配對（去重、有距離上限，同一般孔）
+    bonus_matched: dict[int, int] = {}     # det_index -> bonus idx
+    bonus_ids = [i for (g, i) in known if g == "bonus"]
+    bonus = [(i, d) for i, d in enumerate(detections) if d.is_bonus]
+    if bp is not None and bonus and bonus_ids:
+        pts = np.array([known[("bonus", i)] for i in bonus_ids], np.float64)
+        bonus_matched = _rematch_by_projection(bonus, bonus_ids, pts, bp.rvec, bp.tvec, K, dist)
+
     aims: list[HoleAim] = []
     for i, det in enumerate(detections):
-        idx = matched.get(i, det.idx)
-        key = (det.group, idx)
-        if bp is not None and not det.is_bonus and key in known:
-            distance, bearing, elev = bp.point_aim(known[key])
+        if bp is not None:
+            # 整板位姿已解出：只輸出投影配到孔的框。沒配到的是重複框、半個孔的框或誤偵測
+            # （例如場上的球被當成加分孔）；以前會用尺寸備援、帶著錯的編號（如 main 9）交給策略。
+            m = bonus_matched if det.is_bonus else matched
+            if i not in m:
+                continue
+            idx = m[i]
+            distance, bearing, elev = bp.point_aim(known[(det.group, idx)])
             source = "board_pnp"
-        elif bp is not None and det.is_bonus:
-            # 加分孔：用主板位姿 + 投影就近找到它對應的 bonus 中心
-            idx_b, key_b = _nearest_group_id(det.center, known, "bonus", bp, K, dist)
-            if key_b is not None:
-                idx = idx_b
-                distance, bearing, elev = bp.point_aim(known[key_b])
-                source = "board_pnp"
-            else:
-                distance, bearing, elev, source = _size_aim(det, cfg, K, Kinv)
         else:
+            idx = det.idx
+            if (det.group, idx) not in known:      # 編號超出範圍（多出來的框）→ 不輸出
+                continue
             distance, bearing, elev, source = _size_aim(det, cfg, K, Kinv)
         aims.append(HoleAim(group=det.group, idx=idx, is_bonus=det.is_bonus,
                             is_lit=det.is_lit, distance=distance, bearing=bearing,
                             elev=elev, source=source))
     return SceneEstimate(board_pose=bp, aims=aims)
-
-
-def _nearest_group_id(center_px, known, group, bp: BoardPose, K, dist):
-    """把某群組已知孔中心用主板位姿投影，回傳離 center_px 最近的 (idx, key)。"""
-    ids = [i for (g, i) in known if g == group]
-    if not ids:
-        return None, None
-    obj = np.array([known[(group, i)] for i in ids], np.float64)
-    proj, _ = cv2.projectPoints(obj, bp.rvec, bp.tvec, K, dist)
-    proj = proj.reshape(-1, 2)
-    j = int(np.argmin(np.linalg.norm(proj - center_px, axis=1)))
-    return ids[j], (group, ids[j])
 
 
 def _size_aim(det: Detection, cfg: Config, K, Kinv):
