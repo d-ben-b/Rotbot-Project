@@ -9,8 +9,6 @@
 """
 from __future__ import annotations
 
-import math
-
 import numpy as np
 
 from ..config import CameraConfig
@@ -37,20 +35,29 @@ def _cam_axes(forward: np.ndarray):
 
 
 def projection_matrix(cam: CameraConfig, near: float = 0.02, far: float = 20.0):
-    """由內參 fy/height 導出 OpenGL 投影矩陣（column-major，PyBullet 格式）。"""
-    import pybullet as p
-    fovy = math.degrees(2.0 * math.atan(cam.height / (2.0 * cam.fy)))
-    aspect = cam.width / cam.height
-    return p.computeProjectionMatrixFOV(fovy, aspect, near, far)
+    """由內參 fx/fy/cx/cy 導出 OpenGL 投影矩陣（column-major，PyBullet 格式）。
+
+    主點不在畫面中央時（實機標定 cx 777.7 / 寬 1456），要放進第三欄；
+    舊版用 computeProjectionMatrixFOV 只取 fy，渲染出的孔比 K 投影的位置偏約 50 px。
+    """
+    W, H = float(cam.width), float(cam.height)
+    P = np.array([
+        [2 * cam.fx / W, 0.0, (W - 2 * cam.cx) / W, 0.0],
+        [0.0, 2 * cam.fy / H, (2 * cam.cy - H) / H, 0.0],
+        [0.0, 0.0, -(far + near) / (far - near), -2 * far * near / (far - near)],
+        [0.0, 0.0, -1.0, 0.0]])
+    return P.T.reshape(-1).tolist()
 
 
 def render(eye, forward, cam: CameraConfig, client: int,
            near: float = 0.02, far: float = 20.0,
            light_dir=(-1.0, 0.4, 1.2), noise: float = 3.0, glare: float = 0.0,
-           rng: np.random.Generator | None = None) -> np.ndarray:
+           rng: np.random.Generator | None = None, gpu: bool = False) -> np.ndarray:
     """渲染一張 BGR (H,W,3) uint8 影像。eye/forward 為世界座標。
 
     noise: 感測器高斯雜訊 σ (灰階)；glare: 0~1 眩光強度（模擬強光直射過曝）。
+    gpu: 用 GUI 的 OpenGL 渲染（只在 GUI 模式可用；728×544 約 24 ms，CPU 渲染約 240 ms），
+         沒有陰影、背景是 GUI 的底色。感知 / 合成資料維持 CPU 渲染。
     """
     import pybullet as p
     _r, _d, f, up = _cam_axes(np.asarray(forward, float))
@@ -60,7 +67,8 @@ def render(eye, forward, cam: CameraConfig, client: int,
     w, h, rgba, _depth, _seg = p.getCameraImage(
         cam.width, cam.height, view, proj,
         lightDirection=list(light_dir), shadow=1,
-        renderer=p.ER_TINY_RENDERER, physicsClientId=client)
+        renderer=p.ER_BULLET_HARDWARE_OPENGL if gpu else p.ER_TINY_RENDERER,
+        physicsClientId=client)
     rgb = np.reshape(np.asarray(rgba, np.uint8), (h, w, 4))[:, :, :3]
     img = rgb[:, :, ::-1].astype(np.float32)            # RGB → BGR float
     return _post(img, noise, glare, rng)
