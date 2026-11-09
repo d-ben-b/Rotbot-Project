@@ -76,7 +76,13 @@ class SharedCamera(Camera):
 
     曝光開始時間：相機有 exposure_start()（IMX296：由 sensor 時間戳保守估計）就用它；
     沒有的話用呼叫 camera.read() 的時間（數位孿生在 read() 當下才算圖，這樣是對的）。
+
+    自動重開：連續 REOPEN_AFTER 次讀取失敗（IMX296 每次逾時 2.5 s）就 release()，下一次 read() 重新開串流。
+    推測 CSI 傳輸出錯後 Jetson 的 VI 要重開串流才恢復（未實測）；reopens 記錄重開幾次，網頁警告會顯示。
     """
+
+    REOPEN_AFTER = 2
+    RETRY_S = 0.2              # 讀取失敗後等多久再試（開不起來的相機會立刻失敗，不要一秒試幾十次）
 
     def __init__(self, camera: Camera, fps: float = 30.0, settle_s: float = 0.0):
         self.camera, self.period, self.settle_s = camera, 1.0 / fps, settle_s
@@ -84,6 +90,8 @@ class SharedCamera(Camera):
         self._frame: np.ndarray | None = None
         self._t_start = -1.0                       # 最新一張開始曝光的時間
         self._t_got: float | None = None           # 最新一張拿到的時間
+        self._fails = 0                            # 連續讀取失敗次數
+        self.reopens = 0
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._run, name="shared-camera", daemon=True)
         self._thread.start()
@@ -97,6 +105,14 @@ class SharedCamera(Camera):
         except Exception:
             return t_call
 
+    def _reopen(self):
+        try:
+            self.camera.release()                  # IMX296 / RealCamera：下一次 read() 會重新開啟
+        except Exception:
+            pass
+        self.reopens += 1
+        self._fails = 0
+
     def _run(self):
         while not self._stop.is_set():
             t0 = time.monotonic()
@@ -104,11 +120,17 @@ class SharedCamera(Camera):
                 img = self.camera.read()
             except Exception:
                 img = None
-            if img is not None:
-                t_start = self._exposure_start(t0)
-                with self._cond:
-                    self._frame, self._t_start, self._t_got = img, t_start, time.monotonic()
-                    self._cond.notify_all()
+            if img is None:
+                self._fails += 1
+                if self._fails >= self.REOPEN_AFTER:
+                    self._reopen()
+                self._stop.wait(self.RETRY_S)
+                continue
+            self._fails = 0
+            t_start = self._exposure_start(t0)
+            with self._cond:
+                self._frame, self._t_start, self._t_got = img, t_start, time.monotonic()
+                self._cond.notify_all()
             self._stop.wait(max(0.0, self.period - (time.monotonic() - t0)))
 
     def read(self, timeout: float = 2.0) -> np.ndarray:

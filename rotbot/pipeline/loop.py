@@ -50,16 +50,19 @@ class ShotLog:
     error_cm: float | None = None
     hit: bool | None = None
     points: int | None = None
+    source: str = "camera"      # "camera" = 這一球拍到網板；"last_seen" = 沒看到，沿用上一次看到的網板
 
 
 class ControlLoop:
     """感知→決策→致動 的自主主迴圈。"""
 
+    STALE_S = 1.0               # 相機這麼久沒有新畫面（SharedCamera.age）就不拍了，直接沿用上一次看到的網板
+
     def __init__(self, cfg: Config, camera: Camera, detector: Detector, actuator, *,
                  rpm: float, calib: AdaptiveCalibrator | None = None,
                  planner: ShotPlanner | None = None, sm=None, survey: tuple | None = None,
                  observe_impact=None, ready_timeout: float = 4.0, perceive_retries: int = 2,
-                 is_active=None):
+                 is_active=None, reuse_board: bool = True):
         self.cfg, self.camera, self.detector, self.mcu = cfg, camera, detector, actuator
         # 每個會動到機構的步驟前都問一次；操作手切手動/急停時立刻放手（不會在交接後還發射）
         self.is_active = is_active or (lambda: True)
@@ -72,9 +75,12 @@ class ControlLoop:
         self.ready_timeout, self.perceive_retries = ready_timeout, perceive_retries
         self.K = camera.intrinsics()
         self.logs: list[ShotLog] = []
-        self.skipped = 0              # 連續幾次看不到板（PnP 失敗）；看到一次就歸零
+        self.skipped = 0              # 連續幾次看不到板（相機停了或 PnP 失敗）；看到一次就歸零
         self.skipped_total = 0        # 這一場累計看不到板的次數（紀錄用）
         self.no_target = False        # 沒有可投目標（球數/孔上限用完、射程外）
+        self.reuse_board = reuse_board
+        self.last_seen = None         # (SceneEstimate, 外參, 時間, MCU 重開機次數)：上一次解出整板位姿
+        self.from_last_seen = False   # 這一次 perceive 是不是沿用 last_seen
         self.t0 = time.monotonic()
 
     @staticmethod
@@ -103,20 +109,38 @@ class ControlLoop:
                 raise TimeoutError(f"轉塔 {timeout:.1f} s 內未到 ({pitch:.2f}, {yaw:.2f})")
             time.sleep(0.01)
 
+    def _reboots(self) -> int:
+        return getattr(self.mcu, "reboots", 0)
+
     def perceive(self):
-        """掃視 + 拍照 + 偵測 + 定位；回傳 (SceneEstimate, 外參, 偵測數)。失敗回傳 (None, None, n)。"""
+        """掃視 + 拍照 + 偵測 + 定位；回傳 (SceneEstimate, 外參, 偵測數)。失敗回傳 (None, None, n)。
+
+        看不到板（相機停了、PnP 解不出來）時沿用上一次看到的網板，self.from_last_seen = True。
+        自主模式中底盤不動、網板固定，上一次的「估計 + 當時的外參」換算到發射點系仍然有效。
+        作廢的時機：MCU 重開機（補回的歸零可能有誤差）；AutonomousRunner 在切手動時清掉（可能開過車）。
+        """
+        self.from_last_seen = False
         if not self.is_active():
             return None, None, 0
         st = self._move_and_settle(*self.survey)
         extr = frames.camera_extrinsic_at(self.cfg, st.pitch_deg, st.yaw_deg)  # 用實際角度
         n = 0
-        for _ in range(self.perceive_retries + 1):
-            img = self.camera.read()
-            dets = self.detector.detect(img)
-            n = len(dets)
-            est = localize_holes(dets, self.cfg, self.K)
-            if est.board_pose is not None:
-                return est, extr, n
+        age = getattr(self.camera, "age", None)
+        if age is None or age() <= self.STALE_S:         # 相機已經停了就不必等 read() 逾時
+            for _ in range(self.perceive_retries + 1):
+                try:
+                    img = self.camera.read()
+                except Exception:                        # 相機逾時：不再重拍
+                    break
+                dets = self.detector.detect(img)
+                n = len(dets)
+                est = localize_holes(dets, self.cfg, self.K)
+                if est.board_pose is not None:
+                    self.last_seen = (est, extr, time.monotonic(), self._reboots())
+                    return est, extr, n
+        if self.reuse_board and self.last_seen is not None and self.last_seen[3] == self._reboots():
+            self.from_last_seen = True
+            return self.last_seen[0], self.last_seen[1], n
         return None, None, n
 
     def step(self) -> ShotLog | None:
@@ -126,12 +150,14 @@ class ControlLoop:
             return None
         est, extr, n_dets = self.perceive()
         t_seen = time.perf_counter()
-        if est is None:
+        if est is None or self.from_last_seen:
             if self.is_active():                         # 真的看不到板（不是被接手）才算跳過
                 self.skipped += 1
                 self.skipped_total += 1
-            return None
-        self.skipped = 0
+            if est is None:
+                return None
+        else:
+            self.skipped = 0
         plan = plan_next_shot(est.aims, self.planner, self.cfg, extrinsic=extr,
                               elapsed_s=self.elapsed())
         if plan is None:
@@ -162,7 +188,8 @@ class ControlLoop:
         log = ShotLog(ball=len(self.logs) + 1, target=f"{t.group}#{t.idx}", is_lit=t.is_lit,
                       pitch_deg=pitch, yaw_deg=yaw, corr_deg=(dp, dy), n_dets=n_dets,
                       perceive_ms=(t_seen - t_start) * 1000, aim_ms=(t_ready - t_seen) * 1000,
-                      fire_ms=(t_fired - t_ready) * 1000, total_ms=(t_fired - t_start) * 1000)
+                      fire_ms=(t_fired - t_ready) * 1000, total_ms=(t_fired - t_start) * 1000,
+                      source="last_seen" if self.from_last_seen else "camera")
         if self.observe_impact is not None:
             obs = self.observe_impact(t, st.pitch_deg, st.yaw_deg)
             if obs is not None:
@@ -217,6 +244,8 @@ class AutonomousRunner:
     def _run(self):
         while not self._stop.is_set():
             if self.sm.update() != GameState.AUTONOMOUS:
+                if self.loop is not None:
+                    self.loop.last_seen = None            # 手動時可能開過車：上一次看到的網板位置作廢
                 self._stop.wait(0.05)
                 continue
             if self.loop is None or self._match_t0 != self.sm.t_start:      # 新的一場
@@ -243,6 +272,9 @@ class AutonomousRunner:
             return ""
         if time.monotonic() - self._error_t < self.WARN_ERROR_S and self.errors:
             return f"AI 發生錯誤，持續重試中：{self.errors[-1]}"
+        seen = loop.last_seen
+        if loop.from_last_seen and seen is not None:
+            return f"AI 看不到網板，沿用 {time.monotonic() - seen[2]:.0f} s 前看到的網板位置投球"
         if loop.skipped >= self.WARN_SKIPS:
             return f"AI 連續 {loop.skipped} 次看不到網板（PnP 失敗），持續重試中"
         return ""

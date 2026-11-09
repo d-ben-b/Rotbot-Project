@@ -101,7 +101,7 @@ def test_scattered_misses_do_not_stop_the_loop():
     mcu = FakeMCU()
     cam = TwinCamera(cfg, mcu, lit_bonus=1)
     det = FlakyDetector(TwinDetector(cam, noise_px=0.0), (_miss_steps(3) + [True]) * 2)
-    loop = ControlLoop(cfg, cam, det, mcu, rpm=2400)
+    loop = ControlLoop(cfg, cam, det, mcu, rpm=2400, reuse_board=False)   # 只測計數，不沿用上次的網板
     logs = loop.run(max_shots=3)
     assert len(logs) == 3 and mcu.shots == 3
     assert loop.skipped_total == 6 and loop.skipped == 0
@@ -131,6 +131,74 @@ def test_runner_keeps_trying_after_consecutive_misses():
     assert mcu.shots >= 2, runner.errors
     assert any("看不到網板" in w for w in warnings)
     assert runner.loop.skipped_total == 7
+
+
+class DyingTwinCamera:
+    """數位孿生相機，前 n 次正常，之後每次逾時（相機在比賽中停掉）。"""
+
+    def __init__(self, inner, n):
+        self.inner, self.n, self.calls = inner, n, 0
+
+    def read(self):
+        self.calls += 1
+        if self.calls > self.n:
+            raise RuntimeError("SharedCamera：2.0 s 內沒有新畫面")
+        return self.inner.read()
+
+    def intrinsics(self):
+        return self.inner.intrinsics()
+
+
+def _run_six(camera_ok_reads):
+    """6 球；相機前 camera_ok_reads 次正常（None = 一直正常）。回傳 logs。"""
+    from rotbot.pipeline.loop import ControlLoop
+    from rotbot.sim.closed_loop import practice_calibration
+    from rotbot.sim.twin import TwinImpactObserver
+    cfg = load_config()
+    mcu = FakeMCU()
+    twin = TwinCamera(cfg, mcu, lit_bonus=1)
+    cam = twin if camera_ok_reads is None else DyingTwinCamera(twin, camera_ok_reads)
+    loop = ControlLoop(cfg, cam, TwinDetector(twin, noise_px=0.0), mcu, rpm=2400,
+                       calib=practice_calibration(cfg, np.random.default_rng(1), 9),
+                       observe_impact=TwinImpactObserver(cfg, np.random.default_rng(2)))
+    return loop.run(max_shots=6)
+
+
+def test_camera_dies_mid_match_ai_keeps_shooting_at_last_seen_board():
+    """第 1 球之後相機停掉：AI 沿用第 1 球看到的網板繼續投；瞄準與相機正常時完全相同（底盤和網板沒動）。"""
+    healthy, dying = _run_six(None), _run_six(1)
+    assert len(dying) == 6
+    assert [l.source for l in dying] == ["camera"] + ["last_seen"] * 5
+    assert [l.target for l in dying] == [l.target for l in healthy]
+    assert np.allclose([(l.pitch_deg, l.yaw_deg) for l in dying],
+                       [(l.pitch_deg, l.yaw_deg) for l in healthy])
+    assert [l.hit for l in dying] == [l.hit for l in healthy]
+
+
+def test_runner_forgets_last_seen_board_after_manual():
+    """切手動後（操作手可能開過車）上一次看到的網板作廢，交還 AI 時要重新看。"""
+    from rotbot.pipeline.loop import AutonomousRunner, ControlLoop
+    from rotbot.pipeline.state_machine import GameState, MatchStateMachine
+    cfg = load_config()
+    mcu = FakeMCU()
+    cam = TwinCamera(cfg, mcu, lit_bonus=1)
+    sm = MatchStateMachine(auto_s=0.5)
+    runner = AutonomousRunner(sm, lambda: ControlLoop(
+        cfg, cam, TwinDetector(cam, noise_px=0.0), mcu, rpm=2400, sm=sm,
+        is_active=lambda: sm.update() == GameState.AUTONOMOUS))
+    sm.start()
+    runner.start()
+    try:
+        end = time.monotonic() + 10.0
+        while (runner.loop is None or runner.loop.last_seen is None) and time.monotonic() < end:
+            time.sleep(0.02)
+        assert runner.loop.last_seen is not None
+        while not sm.request_manual() and time.monotonic() < end:
+            time.sleep(0.05)
+        time.sleep(0.5)
+        assert sm.state == GameState.MANUAL and runner.loop.last_seen is None
+    finally:
+        runner.stop()
 
 
 def test_autonomous_loop_with_firmware():

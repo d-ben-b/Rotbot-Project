@@ -108,6 +108,8 @@ def main():
 
     def on_log(log):
         res = "" if log.hit is None else (f"命中 +{log.points}" if log.hit else "未中")
+        if log.source == "last_seen":
+            res += "（沒看到網板，沿用上次的位置）"
         print(f"[AI] 第 {log.ball:2d} 球 {log.target}{'★' if log.is_lit else ''} "
               f"仰角 {log.pitch_deg:6.2f}° 水平 {log.yaw_deg:6.2f}° {log.total_ms:5.0f} ms {res}")
 

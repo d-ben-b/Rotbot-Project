@@ -87,16 +87,53 @@ def test_frozen_camera_is_flagged_on_stream_and_page():
         while (cam.latest() is None or cam.age() < 0.8) and time.monotonic() < end:   # 還沒有畫面時 age 是 inf
             time.sleep(0.05)
         assert cam.latest() is not None and 0.8 <= cam.age() < 5.0
-        assert "沒有新畫面" in TeleopServer(camera=cam).snapshot()["camera_warning"]
+        warning = TeleopServer(camera=cam).snapshot()["camera_warning"]
+        assert "沒有新畫面" in warning and "小地圖" in warning
         fs.start()
         end = time.monotonic() + 2.0
         while fs.jpeg is None and time.monotonic() < end:
             time.sleep(0.02)
         img = cv2.imdecode(np.frombuffer(fs.jpeg, np.uint8), cv2.IMREAD_COLOR)
-        bottom = img[-30:].reshape(-1, 3).mean(axis=0)     # BGR
-        assert bottom[2] > 150 and bottom[0] < 100          # 底下的紅條
+        bar = img[30:58].reshape(-1, 3).mean(axis=0)       # BGR；上方狀態列下面的紅條
+        assert bar[2] > 150 and bar[0] < 100
     finally:
         fs.stop()
+        cam.release()
+
+
+class GlitchCamera:
+    """第 5 次起每次失敗，直到被 release()（重開串流）才恢復，像 CSI 出錯後要 stream off / on 的 VI。"""
+
+    def __init__(self):
+        self.calls, self.releases, self.broken = 0, 0, False
+
+    def read(self):
+        self.calls += 1
+        if self.calls == 5:
+            self.broken = True
+        if self.broken:
+            raise RuntimeError("相機沒有送出影像（逾時）")
+        return np.full((240, 320, 3), self.calls % 256, np.uint8)
+
+    def intrinsics(self):
+        return np.eye(3)
+
+    def release(self):
+        self.releases += 1
+        self.broken = False
+
+
+def test_camera_reopens_after_repeated_failures():
+    """連續失敗 REOPEN_AFTER 次就 release()，下一次 read() 重新開；畫面恢復。"""
+    inner = GlitchCamera()
+    cam = SharedCamera(inner, fps=50)
+    try:
+        end = time.monotonic() + 3.0
+        while (cam.reopens == 0 or cam.age() > 0.1) and time.monotonic() < end:
+            time.sleep(0.02)
+        assert cam.reopens == 1 and inner.releases == 1
+        assert cam.age() < 0.1 and inner.calls > 6          # 重開後又有新畫面
+    finally:
         cam.release()
 
 

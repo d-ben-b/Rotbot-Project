@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import collections
+import dataclasses
 import itertools
 import json
 import statistics
@@ -66,7 +67,9 @@ def camera_warning(camera) -> str:
     if age == float("inf"):
         return "相機還沒有畫面"
     if age > CAMERA_STALE_S:
-        return f"相機 {age:.1f} s 沒有新畫面，畫面停在最後一張"
+        n = getattr(camera, "reopens", 0)
+        return (f"相機 {age:.1f} s 沒有新畫面，畫面停在最後一張（已自動重開 {n} 次）。"
+                "手動瞄準改看右下角小地圖和預估落點文字，它們依轉塔角度計算，不靠相機")
     return ""
 
 
@@ -116,9 +119,9 @@ class FrameSource:
                 self.hud(img, scale)
             age = camera_age(self.camera)
             if age > CAMERA_STALE_S and age != float("inf"):   # 相機停了：latest() 一直是最後一張，要讓操作手看得出來
-                hh, ww = img.shape[:2]
-                cv2.rectangle(img, (0, hh - 40), (ww, hh), (0, 0, 200), -1)
-                cv2.putText(img, f"CAMERA FROZEN {age:4.1f} s - last frame", (10, hh - 12),
+                ww = img.shape[1]                                # 放在上方狀態列下面，不蓋到右下角的小地圖
+                cv2.rectangle(img, (0, 26), (ww, 62), (0, 0, 200), -1)
+                cv2.putText(img, f"CAMERA FROZEN {age:4.1f} s - use the map", (10, 52),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2, cv2.LINE_AA)
             ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 70])
             if ok:
@@ -277,7 +280,11 @@ class TeleopServer:
             if s.ready:
                 txt += "  READY"
         if self.preview is not None and s is not None:     # 畫面中央不再畫準星：它是相機正前方，不是落點
-            self.preview.draw(img, self._predict()[0], scale)
+            pv = self._predict()[0]
+            if pv is not None and camera_age(self.frames.camera) > CAMERA_STALE_S:
+                # 畫面停在舊的一張，轉塔角度卻是現在的：畫在畫面上的落點圈會對不上，只留小地圖
+                pv = dataclasses.replace(pv, px=None)
+            self.preview.draw(img, pv, scale)
         cv2.rectangle(img, (0, 0), (w, 26), (0, 0, 0), -1)
         cv2.putText(img, txt, (8, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (230, 230, 230), 1, cv2.LINE_AA)
 

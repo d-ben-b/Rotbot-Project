@@ -26,15 +26,31 @@ jobs:
 
   firmware:
     runs-on: ubuntu-latest
+    env:
+      ARDUINO_BOARD_MANAGER_ADDITIONAL_URLS: https://github.com/stm32duino/BoardManagerFiles/raw/main/package_stmicroelectronics_index.json
+      # 版本固定（和筆電上的相同），也當快取的 key；要升級時改這裡
+      STM32_CORE: STMicroelectronics:stm32@3.0.0
     steps:
       - uses: actions/checkout@v4
       - uses: arduino/setup-arduino-cli@v2
-      - name: Compile for NUCLEO-G474RE（STM32duino；出廠設定 + 全感測設定）
-        env:
-          ARDUINO_BOARD_MANAGER_ADDITIONAL_URLS: https://github.com/stm32duino/BoardManagerFiles/raw/main/package_stmicroelectronics_index.json
+      # STM32duino 的下載伺服器會回 504（2026-11-09 連兩次）：裝好的套件存成快取，之後的 run 不再下載
+      - name: Cache STM32 core (~/.arduino15)
+        id: core-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.arduino15
+          key: arduino15-${{ runner.os }}-${{ env.STM32_CORE }}
+      - name: Install STM32 core（沒有快取時；下載失敗等一下再試，最多 5 次）
+        if: steps.core-cache.outputs.cache-hit != 'true'
         run: |
-          arduino-cli core update-index
-          arduino-cli core install STMicroelectronics:stm32
+          for i in 1 2 3 4 5; do
+            arduino-cli core update-index && arduino-cli core install "$STM32_CORE" && exit 0
+            echo "第 $i 次下載失敗，$((i * 30)) s 後再試"
+            sleep $((i * 30))
+          done
+          exit 1
+      - name: Compile for NUCLEO-G474RE（STM32duino；出廠設定 + 全感測設定）
+        run: |
           FQBN=STMicroelectronics:stm32:Nucleo_64:pnum=NUCLEO_G474RE
           arduino-cli compile --fqbn $FQBN --warnings all firmware/rotbot_mcu
           arduino-cli compile --fqbn $FQBN --warnings all \
