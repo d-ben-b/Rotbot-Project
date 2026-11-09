@@ -65,7 +65,7 @@ def main():
         grab = lambda: img                                   # 合成影像只做一次，不計入擷取時間
         K = cfg.camera.matrix()
 
-    det = YoloDetector(weights, device=args.device, imgsz=args.imgsz)
+    det = YoloDetector(weights, device=args.device, imgsz=args.imgsz, lit_check=cfg.lit_check)
     t = {k: [] for k in ("capture", "detect", "localize", "plan", "total")}
     for i in range(args.n + 10):
         t0 = time.perf_counter()
@@ -86,6 +86,11 @@ def main():
     for k, v in t.items():
         print(f"  {k:9s} {_stats(v)}")
     print(f"  → 感知+決策 {1000 / statistics.median(t['total']):.1f} 次/秒")
+    bonus = sorted((d for d in dets if d.is_bonus), key=lambda d: d.center[0])
+    if bonus:                                                # 實拍時用來定 field.yaml 的 lit_check 門檻
+        print("  加分孔（左→右）：" + "、".join(
+            f"{'亮' if d.is_lit else '暗'}{'（顏色備援）' if d.extra.get('lit_by') == 'color' else ''} "
+            f"紅色比例 {d.extra.get('red_frac', float('nan')):.3f}" for d in bonus))
     center = next((a for a in est.aims if (a.group, a.idx) == ("main", 4)), None)
     if est.board_pose is None or center is None:
         print("  定位：整板 PnP 失敗（孔沒拍全或偵測太少）")

@@ -1,12 +1,53 @@
 # -*- coding: utf-8 -*-
 """偵測後處理：圓孔編號指派與 bbox→Detection（不需 ultralytics/GPU）。"""
+import cv2
 import numpy as np
 
 from rotbot.config import load_config
 from rotbot.perception.detector import (CLASS_BONUS, CLASS_BONUS_LIT, CLASS_MAIN,
                                         assign_ids, detection_from_bbox, drop_contained,
-                                        drop_non_square)
+                                        drop_non_square, mark_lit_by_color)
 from rotbot.sim.scene import SceneGenerator
+
+_BONUS_BOXES = [(50, 50, 110, 110), (250, 50, 310, 110), (450, 50, 510, 110)]
+
+
+def _bonus_scene(red_holes=(), white_core=True):
+    """木板色背景上三個暗色加分孔；red_holes 的孔畫 LED 上半圈（紅色光暈 + 過曝白芯）。"""
+    img = np.full((200, 600, 3), (115, 165, 205), np.uint8)
+    for i, (x1, y1, x2, y2) in enumerate(_BONUS_BOXES):
+        c, r = ((x1 + x2) // 2, (y1 + y2) // 2), (x2 - x1) // 2
+        cv2.circle(img, c, r, (24, 24, 27), -1)
+        if i in red_holes:
+            cv2.ellipse(img, c, (r - 6, r - 6), 0, 190, 350, (30, 30, 200), 9)
+            cv2.ellipse(img, c, (r - 6, r - 6), 0, 190, 350,
+                        (225, 225, 255) if white_core else (40, 40, 240), 3)
+    return img, [detection_from_bbox(b, CLASS_BONUS) for b in _BONUS_BOXES]
+
+
+def test_color_fallback_marks_lit_hole_yolo_missed():
+    """YOLO 把過曝的亮孔判成未亮 bonus 時，紅色比例明顯最高的那個標成亮孔。"""
+    img, dets = _bonus_scene(red_holes=(1,))
+    got = mark_lit_by_color(img, dets)
+    assert got is dets[1] and dets[1].is_lit and dets[1].extra["lit_by"] == "color"
+    assert not dets[0].is_lit and not dets[2].is_lit
+    assert dets[1].extra["red_frac"] > 0.05 and dets[0].extra["red_frac"] == 0.0
+
+
+def test_color_fallback_needs_a_clear_single_winner():
+    img, dets = _bonus_scene(red_holes=())                 # 沒有紅色（60 秒後燈熄了）
+    assert mark_lit_by_color(img, dets) is None and not any(d.is_lit for d in dets)
+    img, dets = _bonus_scene(red_holes=(0, 2))             # 兩個一樣紅：分不出來就不標
+    assert mark_lit_by_color(img, dets) is None and not any(d.is_lit for d in dets)
+    img, dets = _bonus_scene(red_holes=(1,))               # 只看到一個加分孔：無從比較
+    assert mark_lit_by_color(img, dets[1:2]) is None and not dets[1].is_lit
+
+
+def test_color_fallback_keeps_yolo_lit_answer():
+    img, dets = _bonus_scene(red_holes=(1,))
+    dets[2] = detection_from_bbox(_BONUS_BOXES[2], CLASS_BONUS_LIT)   # YOLO 已經回報亮孔
+    assert mark_lit_by_color(img, dets) is None
+    assert [d.is_lit for d in dets] == [False, False, True]
 
 
 def test_assign_ids_recovers_main_grid():

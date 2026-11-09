@@ -354,8 +354,10 @@ class IMX296Camera(Camera):
             size = (cam_cfg.width, cam_cfg.height)
             self.width, self.height = size if size in modes else modes[0]
             self._K = cam_cfg.matrix() if size in modes else None
+        self._fps = next(f for w, h, f in SENSOR_MODES if (w, h) == (self.width, self.height))
         self.isp = BayerISP(self.hw.wb_r, self.hw.wb_b, CCM_4560K if self.hw.ccm else None)
         self._cap: V4L2Capture | None = None   # 延後開啟：沒有硬體的環境也能 import 與建構
+        self._t_call = 0.0                     # 最近一次呼叫 grab() 的時間（time.monotonic）
         self._exposure_us = self._clamp(self.hw.exposure_us, EXPOSURE_US_RANGE)
         self._gain_db = self._clamp(self.hw.gain_db, GAIN_DB_RANGE)
 
@@ -424,7 +426,24 @@ class IMX296Camera(Camera):
     # ---- IMX296 專屬 ----
     def read_raw(self) -> np.ndarray:
         """最新一張 raw Bayer (H, W) uint16（10-bit 值在高位，>>6 得 0~1023）。"""
-        return self._ensure_open().grab()
+        cap = self._ensure_open()
+        self._t_call = time.monotonic()
+        return cap.grab()
+
+    def exposure_start(self) -> float:
+        """最近一張開始曝光的時間（time.monotonic 的時鐘）。只會估得比實際早，不會晚。
+
+        grab() 回傳的是佇列裡最新一張「已拍完」的畫面，曝光可能在呼叫 read() 之前就開始了，
+        所以 SharedCamera 用這個值判斷畫面是不是轉塔停下之後才拍的。
+        V4L2 時間戳標在讀出開始或結束依驅動而定，所以往前扣一個 frame 週期再扣曝光時間。
+        時間戳不是 monotonic 時鐘（跟現在差 > 1 s）時改用呼叫 grab() 的時間：
+        那張最多在呼叫前一個週期拍完，所以再多扣一個週期。
+        """
+        period, exposure = 1.0 / self._fps, self._exposure_us * 1e-6
+        ts = self.timestamp
+        if ts and abs(time.monotonic() - ts) < 1.0:
+            return ts - period - exposure
+        return self._t_call - 2 * period - exposure
 
     @property
     def timestamp(self) -> float:

@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """自主主迴圈（數位孿生）：轉塔運動學、相機外參，與「真韌體 + 合成相機 + 彈道世界」端到端。"""
+import time
 from types import SimpleNamespace
 
 import numpy as np
@@ -45,6 +46,91 @@ def test_coaxial_camera_kinematic_chain():
         for a in est.aims:
             p = frames.hole_target_point_ext(a.distance, a.bearing, a.elev, *extr)
             assert np.linalg.norm(p - truth[(a.group, a.idx)]) < 0.01, (dp, dy, a)
+
+
+class FakeMCU:
+    """轉塔立刻到位、發射立刻完成的替身（測主迴圈的流程，不測韌體）。"""
+
+    def __init__(self):
+        self.pitch = self.yaw = 0.0
+        self.shots = 0
+
+    def aim(self, pitch, yaw):
+        self.pitch, self.yaw = pitch, yaw
+
+    def flywheel(self, rpm):
+        pass
+
+    def get_status(self):
+        return SimpleNamespace(pitch_deg=self.pitch, yaw_deg=self.yaw, moving=False)
+
+    def wait_ready(self, timeout):
+        pass
+
+    def event_mark(self):
+        return 0
+
+    def fire(self):
+        self.shots += 1
+
+    def wait_event(self, name, timeout, since):
+        pass
+
+
+class FlakyDetector:
+    """依呼叫順序決定這次看不看得到（False = 回傳空清單，例如有人擋住）；用完之後都看得到。"""
+
+    def __init__(self, inner, pattern):
+        self.inner, self.pattern, self.calls = inner, list(pattern), 0
+
+    def detect(self, image):
+        ok = self.pattern[self.calls] if self.calls < len(self.pattern) else True
+        self.calls += 1
+        return self.inner.detect(image) if ok else []
+
+
+def _miss_steps(n):
+    """n 次 step 都看不到板：每次 perceive 拍 3 張（perceive_retries=2）。"""
+    return [False] * (3 * n)
+
+
+def test_scattered_misses_do_not_stop_the_loop():
+    """看不到板的次數累計超過 5 次、但中間有看到時，主迴圈照樣投（以前累計 6 次就停）。"""
+    from rotbot.pipeline.loop import ControlLoop
+    cfg = load_config()
+    mcu = FakeMCU()
+    cam = TwinCamera(cfg, mcu, lit_bonus=1)
+    det = FlakyDetector(TwinDetector(cam, noise_px=0.0), (_miss_steps(3) + [True]) * 2)
+    loop = ControlLoop(cfg, cam, det, mcu, rpm=2400)
+    logs = loop.run(max_shots=3)
+    assert len(logs) == 3 and mcu.shots == 3
+    assert loop.skipped_total == 6 and loop.skipped == 0
+
+
+def test_runner_keeps_trying_after_consecutive_misses():
+    """連續 7 次看不到板：AI 不放棄（網頁顯示原因），看到板之後繼續投。"""
+    from rotbot.pipeline.loop import AutonomousRunner, ControlLoop
+    from rotbot.pipeline.state_machine import GameState, MatchStateMachine
+    cfg = load_config()
+    mcu = FakeMCU()
+    cam = TwinCamera(cfg, mcu, lit_bonus=1)
+    det = FlakyDetector(TwinDetector(cam, noise_px=0.0), _miss_steps(7))
+    sm = MatchStateMachine(auto_s=60.0)
+    runner = AutonomousRunner(sm, lambda: ControlLoop(
+        cfg, cam, det, mcu, rpm=2400, sm=sm, is_active=lambda: sm.update() == GameState.AUTONOMOUS))
+    sm.start()
+    runner.start()
+    warnings = set()
+    try:
+        end = time.monotonic() + 15.0
+        while mcu.shots < 2 and time.monotonic() < end:
+            warnings.add(runner.warning())
+            time.sleep(0.02)
+    finally:
+        runner.stop()
+    assert mcu.shots >= 2, runner.errors
+    assert any("看不到網板" in w for w in warnings)
+    assert runner.loop.skipped_total == 7
 
 
 def test_autonomous_loop_with_firmware():

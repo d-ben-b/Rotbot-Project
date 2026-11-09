@@ -173,7 +173,7 @@ v0 逐發抖動 ≤ 0.1 m/s；練習→比賽轉速漂移 < 1%（否則需要比
 | ⚠️ **飛輪 v0** | 6 m 需 ≥ 14 m/s（約 2400 rpm）；舊設計 1700 rpm ≈ 10 m/s 打不到上排 | **硬體組決定馬達/驅動板**；飛輪試驗台量 v0 與逐發抖動 |
 | ⚠️ 轉塔重複精度 | 6 m 加分孔只容許 ±0.6°；抖動 0.4° → 加分孔 30% | 目標 ≤ 0.2°；上桌量：`turret_check --cycles 20` + 雷射筆（docs/00_todo.md 2-1） |
 | dist_x / grid_cy / launch_h | dist_x 定為 6.0；grid_cy 由官方正視圖推為 1.80（假設板底=地面）；launch_h 仍暫估 0.40 | 練習日實測；PnP 本來就逐球量距離 |
-| 合成→真實落差 | 模型全合成資料。11/09 壓力測試（合成評估）：找孔與 PnP 在 26 種外觀都是 40/40；亮孔在 LED 只看得到上半圈時 17/40，過曝或只有孔內紅光時 0/40 | 實拍亮燈的加分孔並微調、加顏色備援；計畫與上機檢查順序見 [docs/camera_yolo_risks.md](docs/camera_yolo_risks.md) |
+| 合成→真實落差 | 模型全合成資料。11/09 壓力測試（合成評估）：找孔與 PnP 在 26 種外觀都是 40/40；亮孔在 LED 只看得到上半圈時 17/40，過曝或只有孔內紅光時 0/40；加了顏色備援（`lit_check`）後三種都是 40/40 | 實拍亮燈的加分孔並微調，用實拍照片定 `lit_check` 門檻；計畫與上機檢查順序見 [docs/camera_yolo_risks.md](docs/camera_yolo_risks.md) |
 | 落點量測 | 線上校正需要；目前只有模擬（孿生）提供 | 轉速穩在 ±1% 時賽前練習暖機即可；比賽中自動判斷當保險 |
 | ⚠️ 無線干擾 | 場館攝影機用 5.1–5.9 GHz、6.5 W；場館無 Wi‑Fi。11/04 在學校實測 2.4 GHz（頻道 8）：往返一般約 2 ms、最高 9.0 ms，10 m 與隔牆不斷線 | 練習日在場館再測；**11/9 報告書前**決定是否加 RC 備案（通訊硬體之後凍結） |
 | ✅ 相機內參 | 2026-10-07 實機標定完成（RMS 0.71 px、fx 不確定度約 1.2%），存於 `camera_calib:`；相機輸出去畸變影像。10/25 起 `camera:`（模擬）也用同一組去畸變內參 | 換鏡頭或重新對焦後重標定（`camera:` 跟著改）。想更準：再拍一輪近距離（0.4–0.8 m）並用 `--resolve` 合併 |
@@ -209,6 +209,19 @@ v0 逐發抖動 ≤ 0.1 m/s；練習→比賽轉速漂移 < 1%（否則需要比
 
 > **append-only**：每次更新只**新增**條目、不改舊條目，保留數字與決策的演進供工作日誌追蹤。
 > 上方 §0–§8 為「最新快照」；本區為「歷史紀錄」。新到舊排列。
+
+### 2026-11-09（續 2）：相機凍結警告（C1）、轉塔停穩後才拍（C3）、看不到板不再整場停（C4）、亮孔顏色備援（使用者同意改實機感知）
+
+- 依前一則 `docs/camera_yolo_risks.md` 的問題清單修改：
+  - C1：`SharedCamera.age()`；超過 0.5 s 沒有新畫面時，串流畫面底部加紅條「CAMERA FROZEN」，網頁上方顯示警告（`camera_warning`）。
+  - C3：`IMX296Camera.exposure_start()` 由 sensor 時間戳保守估計曝光開始時間（只會估早）；`SharedCamera(settle_s)` 只回傳曝光開始晚於「要求時間 + settle_s」的畫面。新設定 `camera_hw.settle_ms: 150`（暫定）。`run_autonomous` 的實機相機也改成經過 `SharedCamera`。
+  - C4：`ControlLoop.skipped` 改成連續次數（累計另存 `skipped_total`）；`AutonomousRunner` 看不到板時持續重試，不再整場停止；連續 ≥ 3 次或剛發生例外時網頁顯示原因（`ai_warning`）。
+  - 亮孔顏色備援：`detector.mark_lit_by_color`，YOLO 沒有回報亮孔時，比較加分孔框內切橢圓的紅色像素比例。新設定 `lit_check`（`min_frac` 0.02、`min_ratio` 3.0，依合成影像暫定）。`bench_pipeline` 印出每個加分孔的紅色比例，實拍時用來定門檻。
+- 驗證：
+  - `stress_yolo` 重跑（合成評估，各 40 場，seed 7）的亮孔判對：LED 上半圈 17 → 40/40、過曝白芯 0 → 40/40、只有孔內紅光 0 → 40/40、組合 0 → 40/40；亮孔判錯的次數不變（模糊與失焦時 YOLO 自己回報錯，最多 4/40）。合成的未亮孔沒有紅色像素，實物要用實拍確認。
+  - 模擬 60 fps sensor 量 `SharedCamera.read()` 的等待時間（各 40 次）：settle 150 ms 時中位 211 ms、最大 235 ms；settle 0 時中位 47 ms。
+  - 新增測試 9 個：顏色備援 3、`SharedCamera` 與 `exposure_start` 4、主迴圈 2。暫時還原程式後跑這些測試都會失敗（例如看不到板 6 次、中間穿插看到時，舊程式只投 1 球，應該 3 球）。全套 **112 passed、2 skipped**。
+- CI：前一個 commit 的 `firmware` job 失敗，原因是下載 `package_stmicroelectronics_index.json` 時伺服器回 504 Gateway Timeout，編譯沒有開始；`test` job 通過。
 
 ### 2026-11-09（續）：相機上機與 YOLO 的潛在問題排查；新增 `tools/stress_yolo.py`（實機感知程式未改）
 

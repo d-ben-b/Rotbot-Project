@@ -20,7 +20,7 @@
   .muted { color: var(--muted); }
   #banner { display: none; background: #3a2a0a; color: var(--warn); padding: 8px 16px;
             border-bottom: 1px solid #5a4210; font-size: 15px; }
-  #mcu-warn { display: none; background: #451613; color: #ffd0cc; padding: 8px 16px;
+  #mcu-warn, #sys-warn { display: none; background: #451613; color: #ffd0cc; padding: 8px 16px;
               border-bottom: 1px solid #7a1712; font-size: 16px; font-weight: 600; }
   main { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 14px; padding: 14px 16px; }
   @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
@@ -60,6 +60,7 @@
 <div id="banner">此頁不是安全連線（不是 localhost / HTTPS），瀏覽器會擋搖桿（鍵盤仍可用）。要用搖桿：在筆電執行
   <kbd>ssh -N -L 8080:127.0.0.1:8080 使用者@Orin的IP</kbd> 後開 <kbd>http://localhost:8080</kbd>（見 docs/teleop_network.md）。</div>
 <div id="mcu-warn"></div>
+<div id="sys-warn"></div>
 <main>
   <section>
     <img id="video" src="/video.mjpg" alt="機器人相機">
@@ -172,6 +173,9 @@ function render(m) {
   $("drive").textContent = m.drive.map((v) => (v * 100).toFixed(0)).join(", ");
   $("mcu-warn").textContent = m.mcu_warning ? "⚠ " + m.mcu_warning : "";
   $("mcu-warn").style.display = m.mcu_warning ? "block" : "none";
+  const sys = [m.camera_warning, m.ai_warning].filter(Boolean).join("；");   // 相機停了、AI 看不到網板
+  $("sys-warn").textContent = sys ? "⚠ " + sys : "";
+  $("sys-warn").style.display = sys ? "block" : "none";
   if (m.last_error) toast(m.last_error);
 }
 

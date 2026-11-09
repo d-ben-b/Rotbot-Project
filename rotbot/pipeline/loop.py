@@ -72,7 +72,8 @@ class ControlLoop:
         self.ready_timeout, self.perceive_retries = ready_timeout, perceive_retries
         self.K = camera.intrinsics()
         self.logs: list[ShotLog] = []
-        self.skipped = 0              # 看不到板（PnP 失敗）而跳過的次數
+        self.skipped = 0              # 連續幾次看不到板（PnP 失敗）；看到一次就歸零
+        self.skipped_total = 0        # 這一場累計看不到板的次數（紀錄用）
         self.no_target = False        # 沒有可投目標（球數/孔上限用完、射程外）
         self.t0 = time.monotonic()
 
@@ -128,7 +129,9 @@ class ControlLoop:
         if est is None:
             if self.is_active():                         # 真的看不到板（不是被接手）才算跳過
                 self.skipped += 1
+                self.skipped_total += 1
             return None
+        self.skipped = 0
         plan = plan_next_shot(est.aims, self.planner, self.cfg, extrinsic=extr,
                               elapsed_s=self.elapsed())
         if plan is None:
@@ -172,7 +175,7 @@ class ControlLoop:
         return log
 
     def run(self, max_shots: int | None = None) -> list[ShotLog]:
-        """連續投到球用完 / 達上限 / 狀態機離開 AUTONOMOUS。"""
+        """連續投到球用完 / 達上限 / 狀態機離開 AUTONOMOUS / 連續 6 次看不到板。"""
         while self.planner.remaining > 0 and (max_shots is None or len(self.logs) < max_shots):
             if self.sm is not None and self.sm.update() != GameState.AUTONOMOUS:
                 break
@@ -187,13 +190,18 @@ class AutonomousRunner:
     與手動操控網頁同一個程式：操作手按「開始」→ 前 60 秒 AI 投球（網頁手動輸入被拒）→
     第 61 秒起操作手「切手動」時，下一個會動機構的步驟前就放手；「交還 AI」則接著投（同一份球數排程）。
     make_loop()：每場（每次按開始）建立新的 ControlLoop（新的排程與計時）。
+    看不到板時不放棄，一直重試到切手動或比賽結束（以前累計 6 次就整場停掉）；warning() 給網頁顯示原因。
     """
+
+    WARN_SKIPS = 3          # 連續幾次看不到板就在網頁顯示
+    WARN_ERROR_S = 3.0      # 例外（相機逾時、通訊）發生後顯示幾秒
 
     def __init__(self, sm, make_loop, on_log=None):
         import threading
         self.sm, self.make_loop, self.on_log = sm, make_loop, on_log
         self.loop: ControlLoop | None = None
         self.errors: list[str] = []
+        self._error_t = -1e9
         self._match_t0 = None
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._run, name="autonomous", daemon=True)
@@ -213,14 +221,28 @@ class AutonomousRunner:
                 continue
             if self.loop is None or self._match_t0 != self.sm.t_start:      # 新的一場
                 self.loop, self._match_t0 = self.make_loop(), self.sm.t_start
-            if self.loop.planner.remaining <= 0 or self.loop.no_target or self.loop.skipped > 5:
+            if self.loop.planner.remaining <= 0 or self.loop.no_target:
                 self._stop.wait(0.2)
                 continue
             try:
                 log = self.loop.step()
-            except Exception as e:                    # 通訊逾時/看不到板：記錄後繼續，不讓執行緒死掉
+            except Exception as e:                    # 通訊逾時/相機逾時：記錄後繼續，不讓執行緒死掉
                 self.errors.append(f"{type(e).__name__}: {e}")
+                self._error_t = time.monotonic()
                 self._stop.wait(0.2)
                 continue
+            if log is None and self.loop.skipped:     # 看不到板：稍等再重試
+                self._stop.wait(0.1)
             if log is not None and self.on_log:
                 self.on_log(log)
+
+    def warning(self) -> str:
+        """給網頁顯示的 AI 狀態警告；沒事時是空字串。"""
+        loop = self.loop
+        if loop is None or self.sm.state != GameState.AUTONOMOUS:
+            return ""
+        if time.monotonic() - self._error_t < self.WARN_ERROR_S and self.errors:
+            return f"AI 發生錯誤，持續重試中：{self.errors[-1]}"
+        if loop.skipped >= self.WARN_SKIPS:
+            return f"AI 連續 {loop.skipped} 次看不到網板（PnP 失敗），持續重試中"
+        return ""

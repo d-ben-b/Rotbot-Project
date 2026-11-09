@@ -16,7 +16,10 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 
+import cv2
 import numpy as np
+
+from ..config import LitCheckConfig
 
 CLASS_MAIN = 0
 CLASS_BONUS = 1
@@ -132,6 +135,47 @@ def drop_contained(dets: list[Detection], frac: float = 0.6,
     return [d for d in dets if id(d) in ids]
 
 
+def red_fraction(image: np.ndarray, bbox) -> float:
+    """框的內切橢圓中，紅色像素（HSV 色相 < 10 或 > 170、飽和度 > 80、亮度 > 40）的比例。
+
+    只看內切橢圓：框的四角是孔外的木板，不是 LED。過曝成白色的燈條芯不算紅，但它周圍的紅色光暈算。
+    """
+    H, W = image.shape[:2]
+    x1, y1 = max(0, int(round(bbox[0]))), max(0, int(round(bbox[1])))
+    x2, y2 = min(W, int(round(bbox[2]))), min(H, int(round(bbox[3])))
+    if x2 - x1 < 2 or y2 - y1 < 2:
+        return 0.0
+    h, s, v = cv2.split(cv2.cvtColor(image[y1:y2, x1:x2], cv2.COLOR_BGR2HSV))
+    red = ((h < 10) | (h > 170)) & (s > 80) & (v > 40)
+    mask = np.zeros(red.shape, np.uint8)
+    cv2.ellipse(mask, (((x2 - x1 - 1) / 2, (y2 - y1 - 1) / 2), (x2 - x1, y2 - y1), 0), 1, -1)
+    inside = mask > 0
+    return float(red[inside].mean()) if inside.any() else 0.0
+
+
+def mark_lit_by_color(image: np.ndarray, dets: list[Detection],
+                      min_frac: float = 0.02, min_ratio: float = 3.0) -> Detection | None:
+    """YOLO 沒有回報亮孔時的備援：紅色比例最高、而且明顯高於其他加分孔的框，標成亮孔。
+
+    YOLO 在 LED 只露出上半圈、過曝成白色、或只有孔內紅光時，會把亮孔判成未亮的 bonus（框的位置是對的）。
+    前 60 秒三個加分孔剛好亮一個，所以只比相對大小：最高者 ≥ min_frac，且 ≥ 第二高 × min_ratio。
+    少於兩個加分孔框時無從比較，不標。每個加分孔框的比例記在 extra["red_frac"]（實拍時用來定門檻）。
+    回傳被標成亮孔的偵測，沒有則 None。
+    """
+    bonus = [d for d in dets if d.is_bonus]
+    for d in bonus:
+        d.extra["red_frac"] = red_fraction(image, d.bbox)
+    if len(bonus) < 2 or any(d.is_lit for d in bonus):
+        return None
+    ranked = sorted(bonus, key=lambda d: d.extra["red_frac"], reverse=True)
+    top, second = ranked[0].extra["red_frac"], ranked[1].extra["red_frac"]
+    if top < min_frac or top < min_ratio * second:
+        return None
+    ranked[0].is_lit = True
+    ranked[0].extra["lit_by"] = "color"
+    return ranked[0]
+
+
 def assign_ids(dets: list[Detection]) -> None:
     """就地指派孔編號：main 依九宮格 0~8，bonus 依 x 由左至右 0~2。"""
     _assign_main_grid([d for d in dets if not d.is_bonus])
@@ -144,12 +188,13 @@ class YoloDetector(Detector):
     """Ultralytics YOLO 圓孔偵測包裝（bbox 偵測）。"""
 
     def __init__(self, weights: str, conf: float = 0.25, device: str = "0",
-                 imgsz: int = 960):
+                 imgsz: int = 960, lit_check: LitCheckConfig = LitCheckConfig()):
         from ultralytics import YOLO   # 延後 import：無 GPU/未安裝環境不受影響
         self.model = YOLO(weights)
         self.conf = conf
         self.device = device
         self.imgsz = imgsz
+        self.lit_check = lit_check     # 亮孔的顏色備援（mark_lit_by_color）；enabled=False 關掉
 
     def detect(self, image: np.ndarray) -> list[Detection]:
         res = self.model.predict(image, conf=self.conf, device=self.device,
@@ -164,6 +209,8 @@ class YoloDetector(Detector):
             dets.append(detection_from_bbox((x1, y1, x2, y2), c, float(cf)))
         dets = drop_contained(drop_non_square(dets, image.shape))
         assign_ids(dets)
+        if self.lit_check.enabled:
+            mark_lit_by_color(image, dets, self.lit_check.min_frac, self.lit_check.min_ratio)
         return dets
 
 

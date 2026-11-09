@@ -358,6 +358,7 @@ def main():
     ap.add_argument("--conf", type=float, default=0.25)
     ap.add_argument("--device", default="0")
     ap.add_argument("--only", nargs="*", help="只跑名稱含這些字的條件")
+    ap.add_argument("--no-lit-check", action="store_true", help="關掉亮孔的顏色備援（field.yaml 的 lit_check），只看 YOLO")
     ap.add_argument("--save-examples", action="store_true", help="每項存一張畫了框的圖到 runs/stress_yolo/")
     args = ap.parse_args()
     if hasattr(sys.stdout, "reconfigure"):
@@ -365,13 +366,15 @@ def main():
 
     from rotbot.perception.detector import YoloDetector
     cfg = load_config()
-    det = YoloDetector(args.weights, conf=args.conf, device=args.device)
+    lit_check = dataclasses.replace(cfg.lit_check, enabled=cfg.lit_check.enabled and not args.no_lit_check)
+    det = YoloDetector(args.weights, conf=args.conf, device=args.device, lit_check=lit_check)
     save = None
     if args.save_examples:
         save = OUT_DIR
         save.mkdir(parents=True, exist_ok=True)
     n = args.scenes
-    print(f"權重 {Path(args.weights).name}、每項 {n} 場、seed {args.seed}（模擬/合成評估）")
+    print(f"權重 {Path(args.weights).name}、每項 {n} 場、seed {args.seed}、"
+          f"亮孔顏色備援 {'開' if lit_check.enabled else '關'}（模擬/合成評估）")
     print(f"{'#':>2} {'條件':<30} {'PnP':>6} {'一般孔':>8} {'加分孔':>8} {'亮孔對':>6} {'亮孔錯':>6} "
           f"{'編號錯':>6} {'框/場':>6} {'信心中位':>8}")
     t0 = time.time()

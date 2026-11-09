@@ -52,6 +52,24 @@ class _Client:
         self.notice_t: dict[str, float] = {}    # 各類提示上次送出時間（節流用）
 
 
+CAMERA_STALE_S = 0.5     # 超過這麼久沒有新畫面就警告
+
+
+def camera_age(camera) -> float:
+    """相機距離上一張新畫面幾秒；不是 SharedCamera（沒有 age()）時回傳 0。"""
+    f = getattr(camera, "age", None)
+    return f() if f is not None else 0.0
+
+
+def camera_warning(camera) -> str:
+    age = camera_age(camera)
+    if age == float("inf"):
+        return "相機還沒有畫面"
+    if age > CAMERA_STALE_S:
+        return f"相機 {age:.1f} s 沒有新畫面，畫面停在最後一張"
+    return ""
+
+
 class FrameSource:
     """背景執行緒抓相機畫面 → 縮圖 + HUD → JPEG，給 MJPEG 串流用。沒有相機就產生佔位畫面。"""
 
@@ -96,6 +114,12 @@ class FrameSource:
                 img = cv2.resize(img, (self.width, int(h * scale)), interpolation=cv2.INTER_AREA)
             if self.hud:
                 self.hud(img, scale)
+            age = camera_age(self.camera)
+            if age > CAMERA_STALE_S and age != float("inf"):   # 相機停了：latest() 一直是最後一張，要讓操作手看得出來
+                hh, ww = img.shape[:2]
+                cv2.rectangle(img, (0, hh - 40), (ww, hh), (0, 0, 200), -1)
+                cv2.putText(img, f"CAMERA FROZEN {age:4.1f} s - last frame", (10, hh - 12),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2, cv2.LINE_AA)
             ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 70])
             if ok:
                 self.jpeg = buf.tobytes()
@@ -106,9 +130,11 @@ class FrameSource:
 class TeleopServer:
     def __init__(self, mcu=None, camera=None, sm: MatchStateMachine | None = None,
                  deadman_s: float = 0.3, rpm_preset: int = 2400, max_dps: float = 60.0,
-                 jog_refresh_s: float = 0.2, video_fps: float = 15.0, preview=None, chassis=None):
+                 jog_refresh_s: float = 0.2, video_fps: float = 15.0, preview=None, chassis=None,
+                 ai_status=None):
         self.mcu = mcu                      # SerialMCU（或測試替身）；None = 乾跑
         self.preview = preview              # AimPreview：預估落點（None = 不顯示）
+        self.ai_status = ai_status          # () -> str：自主模式的警告（AutonomousRunner.warning）；None = 沒有 AI
         self.chassis = chassis or ChassisConfig()
         self._K, self._K_tried = None, False
         self.sm = sm or MatchStateMachine()
@@ -201,6 +227,8 @@ class TeleopServer:
             jog=self.last_jog, fly=self.last_fly, drive=self.last_drive,
             rpm_preset=self.rpm_preset, max_dps=self.max_dps,
             last_error=self.last_error, mcu_warning=self.mcu_warning,
+            camera_warning=camera_warning(self.frames.camera) if self.frames.camera is not None else "",
+            ai_warning=self.ai_status() if self.ai_status else "",
             video_frames=self.frames.frames, preview=self._preview_info())
 
     # ── 預估落點 ─────────────────────────────────────

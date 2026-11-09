@@ -69,18 +69,33 @@ class RealCamera(Camera):
 class SharedCamera(Camera):
     """一台相機給多個使用者（自主迴圈 + 網頁串流）：背景執行緒持續擷取。
 
-    read()   ：等一張「呼叫之後才開始拍」的畫面（自主迴圈用：轉塔停穩後才拍，不會拿到移動中的舊畫面）
+    read()   ：等一張「曝光在呼叫之後 settle_s 秒以上才開始」的畫面
+               （自主迴圈用：轉塔停下後等支架晃動停了才拍，不會拿到移動中的舊畫面）
     latest() ：立刻回傳最新一張（串流用，可能是舊的）
+    age()    ：距離上一張新畫面幾秒（相機停掉時一直變大；串流用來顯示警告）
+
+    曝光開始時間：相機有 exposure_start()（IMX296：由 sensor 時間戳保守估計）就用它；
+    沒有的話用呼叫 camera.read() 的時間（數位孿生在 read() 當下才算圖，這樣是對的）。
     """
 
-    def __init__(self, camera: Camera, fps: float = 30.0):
-        self.camera, self.period = camera, 1.0 / fps
+    def __init__(self, camera: Camera, fps: float = 30.0, settle_s: float = 0.0):
+        self.camera, self.period, self.settle_s = camera, 1.0 / fps, settle_s
         self._cond = threading.Condition()
         self._frame: np.ndarray | None = None
-        self._t_start = -1.0                       # 最新一張「開始拍」的時間
+        self._t_start = -1.0                       # 最新一張開始曝光的時間
+        self._t_got: float | None = None           # 最新一張拿到的時間
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._run, name="shared-camera", daemon=True)
         self._thread.start()
+
+    def _exposure_start(self, t_call: float) -> float:
+        f = getattr(self.camera, "exposure_start", None)
+        if f is None:
+            return t_call
+        try:
+            return float(f())
+        except Exception:
+            return t_call
 
     def _run(self):
         while not self._stop.is_set():
@@ -90,21 +105,27 @@ class SharedCamera(Camera):
             except Exception:
                 img = None
             if img is not None:
+                t_start = self._exposure_start(t0)
                 with self._cond:
-                    self._frame, self._t_start = img, t0
+                    self._frame, self._t_start, self._t_got = img, t_start, time.monotonic()
                     self._cond.notify_all()
             self._stop.wait(max(0.0, self.period - (time.monotonic() - t0)))
 
     def read(self, timeout: float = 2.0) -> np.ndarray:
-        t_req = time.monotonic()
+        t_req = time.monotonic() + self.settle_s
         with self._cond:
-            if not self._cond.wait_for(lambda: self._t_start >= t_req, timeout):
+            if not self._cond.wait_for(lambda: self._t_start >= t_req, timeout + self.settle_s):
                 raise RuntimeError(f"SharedCamera：{timeout:.1f} s 內沒有新畫面")
             return self._frame
 
     def latest(self) -> np.ndarray | None:
         with self._cond:
             return self._frame
+
+    def age(self) -> float:
+        """距離上一張新畫面的秒數；還沒有任何畫面時是 inf。"""
+        with self._cond:
+            return float("inf") if self._t_got is None else time.monotonic() - self._t_got
 
     def intrinsics(self) -> np.ndarray:
         return self.camera.intrinsics()

@@ -64,6 +64,7 @@ def main():
     if not url:
         ap.error("請給 --mcu 或 --sim")
     mcu = SerialMCU(url).open()
+    camera = None
     try:
         if sil is not None:
             mcu.zero(0.0, 0.0)
@@ -77,15 +78,16 @@ def main():
             camera = TwinCamera(cfg, mcu, rng=np.random.default_rng(args.seed), lit_bonus=1)
             if args.detector == "yolo":
                 from rotbot.perception.detector import YoloDetector
-                detector = YoloDetector(args.weights)
+                detector = YoloDetector(args.weights, lit_check=cfg.lit_check)
             else:
                 detector = TwinDetector(camera, noise_px=0.5, rng=np.random.default_rng(args.seed))
             observe = TwinImpactObserver(cfg, np.random.default_rng(args.seed + 1))
         else:
-            from rotbot.perception.camera import open_camera
+            from rotbot.perception.camera import SharedCamera, open_camera
             from rotbot.perception.detector import YoloDetector
-            camera = open_camera(args.camera, cfg)
-            detector = YoloDetector(args.weights)
+            # SharedCamera：只用轉塔停下 settle_ms 之後才開始曝光的畫面（直接 read() 可能拿到停下前拍的）
+            camera = SharedCamera(open_camera(args.camera, cfg), settle_s=cfg.camera_hw.settle_ms / 1000)
+            detector = YoloDetector(args.weights, lit_check=cfg.lit_check)
 
         calib = None
         if args.calib:
@@ -154,6 +156,8 @@ def main():
         except Exception:
             pass
         mcu.close()
+        if camera is not None:
+            camera.release()
         if sil is not None:
             sil.stop()
 

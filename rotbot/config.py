@@ -107,6 +107,19 @@ class CameraHardwareConfig:
     wb_b: float = 1.85
     ccm: bool = True             # 是否套用色彩校正矩陣
     undistort_interp: str = "nearest"   # 去畸變的內插："nearest"（快）| "linear"（邊緣較平滑）
+    settle_ms: float = 150.0     # 自主迴圈拍照：只用曝光開始晚於「轉塔停下 + 這麼久」的畫面（等支架晃動停）
+
+
+@dataclass(frozen=True)
+class LitCheckConfig:
+    """亮孔的顏色備援：YOLO 沒有回報亮孔時，比較加分孔框內的紅色像素比例。
+
+    前 60 秒三個加分孔剛好亮一個，所以只比相對大小：最高者 ≥ min_frac，且 ≥ 第二高 × min_ratio 才標成亮孔。
+    門檻是依合成影像暫定的，要用實拍照片重設（Detection.extra["red_frac"] 有每個框的值）。
+    """
+    enabled: bool = True
+    min_frac: float = 0.02       # 框內切橢圓中紅色像素的最低比例
+    min_ratio: float = 3.0       # 最高者至少是第二高的幾倍
 
 
 @dataclass(frozen=True)
@@ -181,6 +194,7 @@ class Config:
     camera_hw: CameraHardwareConfig = dc_field(default_factory=CameraHardwareConfig)
     camera_calib: CameraCalibration | None = None    # 沒有 = 實機相機尚未標定
     chassis: ChassisConfig = ChassisConfig()
+    lit_check: LitCheckConfig = LitCheckConfig()
 
     @property
     def k_drag(self) -> float:
@@ -241,4 +255,5 @@ def load_config(path: str | Path | None = None) -> Config:
         camera_hw=CameraHardwareConfig(**raw.get("camera_hw", {})),
         camera_calib=CameraCalibration(**raw["camera_calib"]) if raw.get("camera_calib") else None,
         chassis=ChassisConfig(**raw.get("chassis", {})),
+        lit_check=LitCheckConfig(**raw.get("lit_check", {})),
     )

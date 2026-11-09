@@ -37,7 +37,7 @@ def build_robot(cfg: Config, mcu, camera, detector, *, rpm: float = 2400, calib_
     from rotbot.decision.calibration import AdaptiveCalibrator
     from rotbot.sim.closed_loop import new_calibrator, practice_calibration
 
-    shared = SharedCamera(camera)
+    shared = SharedCamera(camera, settle_s=cfg.camera_hw.settle_ms / 1000)   # 轉塔停下後等支架晃動停
     sm = MatchStateMachine(auto_s=auto_s, match_s=match_s)
     if calib_path:
         base_calib = lambda: AdaptiveCalibrator.load(calib_path, cfg.calibration)
@@ -57,7 +57,7 @@ def build_robot(cfg: Config, mcu, camera, detector, *, rpm: float = 2400, calib_
     idle_calib = AdaptiveCalibrator.load(calib_path, cfg.calibration) if calib_path else None
     preview = AimPreview(cfg, calib=lambda: runner.loop.calib if runner.loop is not None else idle_calib)
     server = TeleopServer(mcu=mcu, camera=shared, sm=sm, rpm_preset=int(rpm), preview=preview,
-                          chassis=cfg.chassis)
+                          chassis=cfg.chassis, ai_status=runner.warning)
     return server, runner, shared
 
 
@@ -104,7 +104,7 @@ def main():
         from rotbot.perception.camera import open_camera
         from rotbot.perception.detector import YoloDetector
         camera = open_camera(args.camera, cfg)
-        detector = YoloDetector(args.weights)
+        detector = YoloDetector(args.weights, lit_check=cfg.lit_check)
 
     def on_log(log):
         res = "" if log.hit is None else (f"命中 +{log.points}" if log.hit else "未中")

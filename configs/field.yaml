@@ -87,6 +87,13 @@ camera_hw:        # 實體相機的擷取設定（只有實機會讀；模擬/�
   wb_b: 1.85            #   tools/camera_check.py --auto-wb 對著白紙量一次再覆蓋
   ccm: true             # 套用色彩校正矩陣：顏色較準（紅色 LED 較飽和），但較慢
   undistort_interp: nearest   # 去畸變的內插：nearest（約 3 ms）| linear（約 18 ms，邊緣較平滑）
+  settle_ms: 150        # 自主迴圈：轉塔停下後，只用曝光開始晚於「停下 + 這麼久」的畫面。暫定值，
+                        #   實測停下後網板在畫面上不再移動的時間後改（docs/camera_yolo_risks.md 第 4 節第 4 步）
+
+lit_check:        # 亮孔的顏色備援：YOLO 沒回報亮孔時，比較加分孔框內的紅色像素比例（docs/camera_yolo_risks.md Y1）
+  enabled: true
+  min_frac: 0.02  # 最高者的紅色比例至少要這麼多
+  min_ratio: 3.0  # 且至少是第二高的幾倍。兩個門檻都是依合成影像暫定，要用實拍照片重設
 
 camera_mount:     # 相機相對「發射點」的外參（⚠️ 全 0=相機在發射口且對齊，待實機標定 P5）
   dx: 0.0         # 右 (m)
