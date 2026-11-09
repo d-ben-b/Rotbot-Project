@@ -243,6 +243,58 @@ def test_teleop_restores_zero_after_mcu_reboot():
             asyncio.run(scenario(mcu))
 
 
+def test_teleop_blocks_handover_when_ai_cannot_see_board():
+    """手動開車會通知 AI（網板位置作廢）；AI 不能接手時「交還 AI」被拒、留在手動，並說明原因。"""
+    class DriveMCU(FakeMCU):
+        def drive(self, *w):
+            self.calls.append(("drive", *w))
+
+    class FakeAI:
+        def __init__(self):
+            self.moved, self.block = 0, ""
+
+        def note_chassis_moved(self):
+            self.moved += 1
+
+        def resume_blocker(self):
+            return self.block
+
+        def warning(self):
+            return f"現在不能交還 AI：{self.block}" if self.block else ""
+
+    async def scenario():
+        ai = FakeAI()
+        server = TeleopServer(mcu=DriveMCU(), camera=None, sm=MatchStateMachine(auto_s=0.3, match_s=30), ai=ai)
+        runner, port = await _serve(server)
+        try:
+            async with aiohttp.ClientSession() as s:
+                ws = await s.ws_connect(f"http://127.0.0.1:{port}/ws")
+                await ws.send_json({"t": "cmd", "name": "start"})
+                await _wait(ws, lambda m: m["t"] == "state" and m["game"] == "AUTONOMOUS")
+                await asyncio.sleep(0.35)
+                await ws.send_json({"t": "cmd", "name": "manual"})
+                await _wait(ws, lambda m: m["t"] == "state" and m["game"] == "MANUAL")
+                await ws.send_json({"t": "input", "jog": [10, 0], "fly": 0})   # 只轉轉塔
+                await asyncio.sleep(0.05)
+                assert ai.moved == 0
+                await ws.send_json({"t": "input", "jog": [0, 0], "drive": [1, 0, 0], "fly": 0})
+                await asyncio.sleep(0.05)
+                assert ai.moved >= 1
+                ai.block = "相機沒有畫面，AI 也沒有可沿用的網板位置（手動時開過車）"
+                await _wait(ws, lambda m: m["t"] == "state" and m["ai_warning"].startswith("現在不能交還 AI"))
+                await ws.send_json({"t": "cmd", "name": "auto"})
+                msg = await _wait(ws, lambda m: m["t"] == "notice")
+                assert msg["msg"].startswith("不能交還 AI") and server.sm.state.value == "MANUAL"
+                ai.block = ""                                                  # 相機回來了
+                await ws.send_json({"t": "cmd", "name": "auto"})
+                await _wait(ws, lambda m: m["t"] == "state" and m["game"] == "AUTONOMOUS")
+                await ws.close()
+        finally:
+            await runner.cleanup()
+
+    asyncio.run(scenario())
+
+
 def test_teleop_drive_mixing_and_deadman():
     """手動時方向鍵/左搖桿 → 麥克納姆輪四輪輸出；自主期間不開車；輸入中斷 → 車輪停。"""
     class DriveMCU(FakeMCU):

@@ -134,10 +134,12 @@ class TeleopServer:
     def __init__(self, mcu=None, camera=None, sm: MatchStateMachine | None = None,
                  deadman_s: float = 0.3, rpm_preset: int = 2400, max_dps: float = 60.0,
                  jog_refresh_s: float = 0.2, video_fps: float = 15.0, preview=None, chassis=None,
-                 ai_status=None):
+                 ai=None):
         self.mcu = mcu                      # SerialMCU（或測試替身）；None = 乾跑
         self.preview = preview              # AimPreview：預估落點（None = 不顯示）
-        self.ai_status = ai_status          # () -> str：自主模式的警告（AutonomousRunner.warning）；None = 沒有 AI
+        # AutonomousRunner（None = 沒有 AI）：warning() 網頁警告、note_chassis_moved() 手動開過車、
+        # resume_blocker() 交還 AI 前的檢查
+        self.ai = ai
         self.chassis = chassis or ChassisConfig()
         self._K, self._K_tried = None, False
         self.sm = sm or MatchStateMachine()
@@ -231,7 +233,7 @@ class TeleopServer:
             rpm_preset=self.rpm_preset, max_dps=self.max_dps,
             last_error=self.last_error, mcu_warning=self.mcu_warning,
             camera_warning=camera_warning(self.frames.camera) if self.frames.camera is not None else "",
-            ai_warning=self.ai_status() if self.ai_status else "",
+            ai_warning=self.ai.warning() if self.ai is not None else "",
             video_frames=self.frames.frames, preview=self._preview_info())
 
     # ── 預估落點 ─────────────────────────────────────
@@ -453,7 +455,10 @@ class TeleopServer:
             else:
                 c.last_input = time.monotonic()
         elif name == "auto":
-            if self.sm.request_auto():
+            why = self.ai.resume_blocker() if self.ai is not None else ""
+            if why and self.sm.update() == GameState.MANUAL:
+                await self._notice(c, f"不能交還 AI：{why}。先維持手動，看右下角小地圖瞄準")
+            elif self.sm.request_auto():
                 await self._safe_stop("交還 AI")
         elif name == "reset":
             self.sm.reset()
@@ -492,6 +497,8 @@ class TeleopServer:
             if d != self.last_drive or (any(d) and now - self.last_drive_t > self.jog_refresh_s):
                 self.last_drive, self.last_drive_t = d, now
                 await self._mcu("drive", *self.mix(*d))
+                if any(d) and self.ai is not None:
+                    self.ai.note_chassis_moved()          # 底盤動了：AI 上一次看到的網板位置作廢
         fly = m.get("fly")
         if fly is not None:
             fly = int(max(0, min(4000, int(fly))))

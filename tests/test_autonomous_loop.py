@@ -175,16 +175,35 @@ def test_camera_dies_mid_match_ai_keeps_shooting_at_last_seen_board():
     assert [l.hit for l in dying] == [l.hit for l in healthy]
 
 
-def test_runner_forgets_last_seen_board_after_manual():
-    """切手動後（操作手可能開過車）上一次看到的網板作廢，交還 AI 時要重新看。"""
+class AgedTwinCamera:
+    """數位孿生相機 + 可設定的 age()（SharedCamera 的介面），模擬相機停掉。"""
+
+    def __init__(self, inner):
+        self.inner, self.stale = inner, False
+
+    def read(self):
+        if self.stale:
+            raise RuntimeError("SharedCamera：2.0 s 內沒有新畫面")
+        return self.inner.read()
+
+    def age(self):
+        return 5.0 if self.stale else 0.0
+
+    def intrinsics(self):
+        return self.inner.intrinsics()
+
+
+def test_manual_keeps_last_seen_board_until_chassis_moves():
+    """切手動只轉轉塔：網板位置照樣能沿用、可以交還 AI。開過車且相機停了：不能交還 AI，網頁先警告。"""
     from rotbot.pipeline.loop import AutonomousRunner, ControlLoop
     from rotbot.pipeline.state_machine import GameState, MatchStateMachine
     cfg = load_config()
     mcu = FakeMCU()
-    cam = TwinCamera(cfg, mcu, lit_bonus=1)
+    twin = TwinCamera(cfg, mcu, lit_bonus=1)
+    cam = AgedTwinCamera(twin)
     sm = MatchStateMachine(auto_s=0.5)
     runner = AutonomousRunner(sm, lambda: ControlLoop(
-        cfg, cam, TwinDetector(cam, noise_px=0.0), mcu, rpm=2400, sm=sm,
+        cfg, cam, TwinDetector(twin, noise_px=0.0), mcu, rpm=2400, sm=sm,
         is_active=lambda: sm.update() == GameState.AUTONOMOUS))
     sm.start()
     runner.start()
@@ -192,11 +211,18 @@ def test_runner_forgets_last_seen_board_after_manual():
         end = time.monotonic() + 10.0
         while (runner.loop is None or runner.loop.last_seen is None) and time.monotonic() < end:
             time.sleep(0.02)
-        assert runner.loop.last_seen is not None
         while not sm.request_manual() and time.monotonic() < end:
             time.sleep(0.05)
-        time.sleep(0.5)
-        assert sm.state == GameState.MANUAL and runner.loop.last_seen is None
+        time.sleep(0.3)
+        cam.stale = True                                        # 手動時相機停了
+        assert runner.loop.last_seen is not None                # 只切手動：網板位置還在
+        assert runner.resume_blocker() == "" and runner.warning() == ""
+        runner.note_chassis_moved()                             # 開過車
+        assert runner.loop.last_seen is None
+        assert "沒有畫面" in runner.resume_blocker()
+        assert runner.warning().startswith("現在不能交還 AI")
+        cam.stale = False                                       # 相機回來：又可以交還
+        assert runner.resume_blocker() == ""
     finally:
         runner.stop()
 

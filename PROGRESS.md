@@ -210,6 +210,19 @@ v0 逐發抖動 ≤ 0.1 m/s；練習→比賽轉速漂移 < 1%（否則需要比
 > **append-only**：每次更新只**新增**條目、不改舊條目，保留數字與決策的演進供工作日誌追蹤。
 > 上方 §0–§8 為「最新快照」；本區為「歷史紀錄」。新到舊排列。
 
+### 2026-11-09（續 4）：開過車才作廢 AI 的網板位置；相機沒畫面時擋下「交還 AI」；CI 改用 raw.githubusercontent.com
+
+- 使用者建議：手動時相機還沒恢復，就不讓切回自動，並加警告。
+- 修改：
+  - `AutonomousRunner` 不再於切手動時清掉 `last_seen`；改由 `TeleopServer` 在手動送出非零的 DRIVE 時呼叫 `note_chassis_moved()` 清掉。只轉轉塔不影響。
+  - `resume_blocker()`：相機停了（`age` 超過 1 s）而且沒有 `last_seen` 時，按「交還 AI」被拒、留在手動並說明原因；停在手動時 `warning()` 先顯示「現在不能交還 AI」。
+  - `TeleopServer` 的參數 `ai_status` 改成 `ai`（`AutonomousRunner`）。
+  - 文件：`docs/00_todo.md` 第 6 步與 `docs/camera_yolo_risks.md` C1 加上手動看不到網板時的做法。
+- CI：續 3 的快取與重試在這次 run 照設計執行，但 5 次下載都回 504（約 7 分鐘）。在這台筆電上檢查：github.com 首頁與 API 回 200，`github.com/…/raw/…` 與 GitHub release 檔案回 504，`raw.githubusercontent.com` 回 200。
+  - STM32 套件（核心、編譯器、CMSIS、STM32Tools）都放在 GitHub release，GitHub 恢復之前無法安裝；第一次成功之後才會有快取。
+  - index 網址改成 `raw.githubusercontent.com`；最後一次失敗不再多等 150 s，並寫出錯誤說明。
+- 驗證：新增 `test_teleop_blocks_handover_when_ai_cannot_see_board`；`test_runner_forgets_last_seen_board_after_manual` 改成 `test_manual_keeps_last_seen_board_until_chassis_moves`。全套 **116 passed、2 skipped**。
+
 ### 2026-11-09（續 3）：相機凍住之後的處理（自動重開、AI 沿用上一次看到的網板、手動改看小地圖）；CI 快取 STM32 套件
 
 - 起因：使用者問 C1 只顯示警告，之後怎麼辦。

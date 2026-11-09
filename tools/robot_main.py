@@ -57,7 +57,7 @@ def build_robot(cfg: Config, mcu, camera, detector, *, rpm: float = 2400, calib_
     idle_calib = AdaptiveCalibrator.load(calib_path, cfg.calibration) if calib_path else None
     preview = AimPreview(cfg, calib=lambda: runner.loop.calib if runner.loop is not None else idle_calib)
     server = TeleopServer(mcu=mcu, camera=shared, sm=sm, rpm_preset=int(rpm), preview=preview,
-                          chassis=cfg.chassis, ai_status=runner.warning)
+                          chassis=cfg.chassis, ai=runner)
     return server, runner, shared
 
 

@@ -27,7 +27,8 @@ jobs:
   firmware:
     runs-on: ubuntu-latest
     env:
-      ARDUINO_BOARD_MANAGER_ADDITIONAL_URLS: https://github.com/stm32duino/BoardManagerFiles/raw/main/package_stmicroelectronics_index.json
+      # 直接用 raw.githubusercontent.com：2026-11-09 github.com/…/raw/ 這個轉址入口回 504，raw.githubusercontent.com 正常
+      ARDUINO_BOARD_MANAGER_ADDITIONAL_URLS: https://raw.githubusercontent.com/stm32duino/BoardManagerFiles/main/package_stmicroelectronics_index.json
       # 版本固定（和筆電上的相同），也當快取的 key；要升級時改這裡
       STM32_CORE: STMicroelectronics:stm32@3.0.0
     steps:
@@ -45,9 +46,11 @@ jobs:
         run: |
           for i in 1 2 3 4 5; do
             arduino-cli core update-index && arduino-cli core install "$STM32_CORE" && exit 0
+            [ "$i" -lt 5 ] || break
             echo "第 $i 次下載失敗，$((i * 30)) s 後再試"
             sleep $((i * 30))
           done
+          echo "::error::STM32 套件下載 5 次都失敗（套件放在 GitHub release，下載伺服器回 504 時等它恢復後重跑）"
           exit 1
       - name: Compile for NUCLEO-G474RE（STM32duino；出廠設定 + 全感測設定）
         run: |

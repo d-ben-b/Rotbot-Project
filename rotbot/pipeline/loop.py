@@ -117,7 +117,7 @@ class ControlLoop:
 
         看不到板（相機停了、PnP 解不出來）時沿用上一次看到的網板，self.from_last_seen = True。
         自主模式中底盤不動、網板固定，上一次的「估計 + 當時的外參」換算到發射點系仍然有效。
-        作廢的時機：MCU 重開機（補回的歸零可能有誤差）；AutonomousRunner 在切手動時清掉（可能開過車）。
+        作廢的時機：MCU 重開機（補回的歸零可能有誤差）；手動時開過車（AutonomousRunner.note_chassis_moved）。
         """
         self.from_last_seen = False
         if not self.is_active():
@@ -244,8 +244,6 @@ class AutonomousRunner:
     def _run(self):
         while not self._stop.is_set():
             if self.sm.update() != GameState.AUTONOMOUS:
-                if self.loop is not None:
-                    self.loop.last_seen = None            # 手動時可能開過車：上一次看到的網板位置作廢
                 self._stop.wait(0.05)
                 continue
             if self.loop is None or self._match_t0 != self.sm.t_start:      # 新的一場
@@ -265,9 +263,34 @@ class AutonomousRunner:
             if log is not None and self.on_log:
                 self.on_log(log)
 
+    def note_chassis_moved(self) -> None:
+        """手動時開過車：上一次看到的網板位置作廢（TeleopServer 送出非零的 DRIVE 時呼叫）。
+
+        只轉轉塔不算：網板相對底盤的位置沒變，last_seen 換算到發射點系仍然有效。
+        """
+        if self.loop is not None:
+            self.loop.last_seen = None
+
+    def resume_blocker(self) -> str:
+        """「交還 AI」前的檢查；回傳不能交還的原因，空字串 = 可以。
+
+        相機停了，又沒有可沿用的網板位置（手動時開過車、或從來沒看到過網板）時，
+        AI 接手後只會在掃視姿態一直重試、不會投球，不如留在手動。
+        """
+        loop = self.loop
+        if loop is None:
+            return ""
+        age = getattr(loop.camera, "age", None)
+        if age is not None and age() > loop.STALE_S and loop.last_seen is None:
+            return "相機沒有畫面，AI 也沒有可沿用的網板位置（手動時開過車）"
+        return ""
+
     def warning(self) -> str:
         """給網頁顯示的 AI 狀態警告；沒事時是空字串。"""
         loop = self.loop
+        if loop is not None and self.sm.state == GameState.MANUAL:
+            why = self.resume_blocker()
+            return f"現在不能交還 AI：{why}" if why else ""
         if loop is None or self.sm.state != GameState.AUTONOMOUS:
             return ""
         if time.monotonic() - self._error_t < self.WARN_ERROR_S and self.errors:
