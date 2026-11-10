@@ -482,3 +482,57 @@ def test_teleop_follows_hardware_estop():
         with SerialMCU(sil.url, keep_pose_on_estop=True) as mcu:
             mcu.zero(0.0, 0.0)
             asyncio.run(scenario(mcu))
+
+
+def test_teleop_start_box_toggle_and_measured_preview():
+    """待命時切換左框、右框：AI 與預估落點跟著換；開賽後不能切。AI 量到網板時預估落點標「AI 量到的」。"""
+    from rotbot.actuation import protocol as P
+    from rotbot.actuation.protocol import Status
+    from rotbot.config import load_config
+    from rotbot.decision import frames
+    from rotbot.teleop.aim_preview import AimPreview
+    from rotbot.teleop.start_box import StartBoxChoice
+
+    box = StartBoxChoice(load_config(), "left")
+    preview = AimPreview(box.cfg)
+    box.listeners.append(preview.set_cfg)
+
+    class StatusMCU(FakeMCU):
+        status = Status(P.F_HOMED, 25.0, 13.0, -1, 2400, 0, 0, 0)
+
+    class FakeAI:
+        moved = 0
+
+        def warning(self):
+            return ""
+
+        def note_chassis_moved(self):
+            self.moved += 1
+
+        def board_pose(self):
+            return frames.board_to_launcher(box.cfg)
+
+    async def scenario():
+        ai = FakeAI()
+        server = TeleopServer(mcu=StatusMCU(), camera=None, sm=MatchStateMachine(auto_s=0.2, match_s=30),
+                              preview=preview, start_box=box, ai=ai)
+        runner, port = await _serve(server)
+        try:
+            async with aiohttp.ClientSession() as s:
+                ws = await s.ws_connect(f"http://127.0.0.1:{port}/ws")
+                m = await _wait(ws, lambda m: m["t"] == "state")
+                assert m["box_side"] == "left" and m["start_box"].startswith("左框")
+                assert m["preview"]["measured"] is True
+                await ws.send_json({"t": "cmd", "name": "box_right"})
+                n = await _wait(ws, lambda m: m["t"] == "notice" and m["msg"].startswith("起始框"))
+                assert "右框（網板中心在左邊 1.65 m、前方 6.90 m）" in n["msg"], n["msg"]
+                assert box.cfg.field.grid_cx == preview.cfg.field.grid_cx == -1.65 and ai.moved == 1
+                await ws.send_json({"t": "cmd", "name": "start"})
+                await ws.send_json({"t": "cmd", "name": "box_left"})
+                await _wait(ws, lambda m: m["t"] == "notice" and "只能在待命時切換起始框" in m["msg"])
+                assert box.side == "right"
+                await ws.close()
+        finally:
+            await runner.cleanup()
+
+    asyncio.run(scenario())

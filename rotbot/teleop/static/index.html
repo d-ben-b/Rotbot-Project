@@ -37,6 +37,7 @@
            padding: 10px 14px; font-size: 16px; cursor: pointer; }
   button:hover { background: #2d3a4f; }
   button:disabled { opacity: .45; cursor: not-allowed; }
+  button.sel { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
   #btn-estop { background: #7a1712; border-color: #a4231b; font-weight: 700; flex: 1 1 100%; padding: 14px; font-size: 18px; }
   table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
   td { padding: 4px 0; border-bottom: 1px solid var(--line); }
@@ -73,6 +74,11 @@
     <div class="panel">
       <div id="state">–</div>
       <div id="clock" class="muted">–</div>
+      <div id="box-row" class="row" style="align-items:center">
+        <span id="box" class="muted">起始框：–</span>
+        <button id="btn-box-left" data-cmd="box_left">左框</button>
+        <button id="btn-box-right" data-cmd="box_right">右框</button>
+      </div>
       <div class="row">
         <button id="btn-start" data-cmd="start">開始（哨音）</button>
         <button id="btn-manual" data-cmd="manual">切手動</button>
@@ -157,6 +163,13 @@ function render(m) {
   $("btn-manual").disabled = !(m.game === "AUTONOMOUS" && !m.auto_locked);
   $("btn-auto").disabled = m.game !== "MANUAL";
   $("btn-resume").disabled = !m.can_resume;
+  $("box-row").style.display = m.start_box ? "flex" : "none";
+  $("box").textContent = "起始框：" + (m.start_box || "–");
+  for (const side of ["left", "right"]) {
+    const b = $("btn-box-" + side);
+    b.disabled = m.game !== "IDLE";
+    b.classList.toggle("sel", m.box_side === side);
+  }
   $("mrtt").textContent = fmt(m.mcu_rtt_ms, 1); $("cms").textContent = fmt(m.cmd_ms, 1);
   const s = m.mcu;
   if (s) {
@@ -193,6 +206,7 @@ function renderPreview(pv) {
     if (off) t += `，離孔心${off}`;
   }
   if (!pv.fly_on) t += `（飛輪沒開，先用 ${preset} rpm 估）`;
+  if (pv.ok) t += pv.measured ? "（網板位置：AI 量到的）" : "（網板位置：設定值）";
   el.textContent = t;
   el.className = pv.ok && pv.inside ? "in" : "out";
 }

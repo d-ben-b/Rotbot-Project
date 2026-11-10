@@ -172,7 +172,7 @@ v0 逐發抖動 ≤ 0.1 m/s；練習→比賽轉速漂移 < 1%（否則需要比
 | 場地間距（孔徑/欄距/列距） | ✅ 已用**官方尺寸標示圖**實值：欄距0.90、列距0.60、加分排0.50（公差±2cm）| 完成 |
 | ⚠️ **飛輪 v0** | 6 m 需 ≥ 14 m/s（約 2400 rpm）；舊設計 1700 rpm ≈ 10 m/s 打不到上排 | **硬體組決定馬達/驅動板**；飛輪試驗台量 v0 與逐發抖動 |
 | ⚠️ 轉塔重複精度 | 6 m 加分孔只容許 ±0.6°；抖動 0.4° → 加分孔 30% | 目標 ≤ 0.2°；上桌量：`turret_check --cycles 20` + 雷射筆（docs/00_todo.md 2-1） |
-| dist_x / grid_cx / grid_cy / launch_h | dist_x 定為 6.0，但 AI 不開車、前 60 秒在起始框裡投：依規則書俯視圖，起始框離網板 6.3–7.5 m、偏離中心 1.3–2.0 m（11/09 補）；grid_cy 由官方正視圖推為 1.80（假設板底=地面）；launch_h 仍暫估 0.40 | 練習日實測；依起始框左右填 `grid_cx`（量法見 docs/00_todo.md「要跟硬體組要的數字」）；PnP 本來就逐球量距離 |
+| dist_x / grid_cx / grid_cy / launch_h | dist_x 定為 6.0，但 AI 不開車、前 60 秒在起始框裡投：依規則書俯視圖，起始框離網板 6.3–7.5 m、偏離中心 1.3–2.0 m（11/09 補）；grid_cy 由官方正視圖推為 1.80（假設板底=地面）；launch_h 仍暫估 0.40 | 練習日實測；量好填 `field.yaml` 的 `start_box`，網頁待命時切換左框、右框（量法見 docs/00_todo.md「要跟硬體組要的數字」）；PnP 本來就逐球量距離 |
 | 合成→真實落差 | 模型全合成資料。11/09 壓力測試（合成評估）：找孔與 PnP 在 26 種外觀都是 40/40；亮孔在 LED 只看得到上半圈時 17/40，過曝或只有孔內紅光時 0/40；加了顏色備援（`lit_check`）後三種都是 40/40 | 實拍亮燈的加分孔並微調，用實拍照片定 `lit_check` 門檻；計畫與上機檢查順序見 [docs/camera_yolo_risks.md](docs/camera_yolo_risks.md) |
 | 落點量測 | 線上校正需要；目前只有模擬（孿生）提供 | 轉速穩在 ±1% 時賽前練習暖機即可；比賽中自動判斷當保險 |
 | ⚠️ 無線干擾 | 場館攝影機用 5.1–5.9 GHz、6.5 W；場館無 Wi‑Fi。11/04 在學校實測 2.4 GHz（頻道 8）：往返一般約 2 ms、最高 9.0 ms，10 m 與隔牆不斷線 | 練習日在場館再測；**11/9 報告書前**決定是否加 RC 備案（通訊硬體之後凍結） |
@@ -209,6 +209,36 @@ v0 逐發抖動 ≤ 0.1 m/s；練習→比賽轉速漂移 < 1%（否則需要比
 
 > **append-only**：每次更新只**新增**條目、不改舊條目，保留數字與決策的演進供工作日誌追蹤。
 > 上方 §0–§8 為「最新快照」；本區為「歷史紀錄」。新到舊排列。
+
+### 2026-11-10（續 3）：網頁切換左框、右框；AI 看不到網板時轉塔找、找不到就盲投；手動小地圖改用 AI 量到的網板位置
+
+- 起因：起始框不在網板正前方（2026-11-09（續 5）），使用者同意做這三項。
+- 修改：
+  - 起始框：`field.yaml` 新增 `start_box`（`side`、`left_grid_cx` 1.65、`right_grid_cx` −1.65、`dist_x` 6.90，都是框中間的暫用值），`Config.at_start_box()` 換掉 `field` 的 `grid_cx`、`dist_x`；`field` 的置中 6 m 留給模擬與評估。
+    新增 `rotbot/teleop/start_box.py` 的 `StartBoxChoice`。比賽主程式用 `start_box.side` 開機，網頁待命時按「左框」「右框」切換；AI 在按「開始」時讀當下的設定，`AimPreview.set_cfg()` 跟著換。`robot_main` 加 `--start-box`（`--sim` 時同時把數位孿生的網板放到那個起始框）。
+  - 找網板（`ControlLoop._search`）：沒有可沿用的網板位置、相機有畫面、掃視姿態連續 2 次解不出網板時，轉塔依序轉到水平 ±35°、俯仰 ±12° 和四個斜角拍照；拍到 3 個孔以上就把孔的中心轉到畫面中央再解整板位姿，找到後把掃視姿態改到那裡。找完一輪沒找到，隔 10 s 再找。設定在 `field.yaml` 的 `search`。
+  - 盲投（`_blind_estimate`）：開賽、救援後繼續、底盤動過之後 15 s 都沒看到網板，就用設定的網板位置算每孔量測，交給同一個 `plan_next_shot`；加分孔都當成沒亮，所以只投一般孔。`ShotLog.source = "blind"`，網頁和終端機都標出來。
+  - 看到的網板和起始框設定左右相反（兩邊都偏離中心 0.5 m 以上）時，網頁提醒檢查左框、右框。
+  - 預估落點：`AimPreview.predict(..., board=)` 接受網板位姿，彈道和任意網板平面求交點（先當鉛直面，再用割線法修正傾斜）。伺服器用 `AutonomousRunner.board_pose()`（AI 上一次量到的網板，換到發射點系）；沒有時用設定的位置。網頁的預估落點文字後面標「網板位置：AI 量到的」或「設定值」。
+  - `note_chassis_moved()` 改呼叫 `ControlLoop.forget_board()`（也重新計算盲投的等待）；按「重置」、切換起始框時也呼叫。
+  - 文件：`docs/00_todo.md` 第 6 步加起始框確認、看不到網板時的處理、小地圖的網板位置；「要跟硬體組要的數字」改成填 `start_box`；`camera_yolo_risks.md` C1 同步。
+- 驗證：
+  - 數位孿生（假 MCU，相機量測雜訊 0.5 px，載入練習 9 球的校正、比賽中不再學），各投 9 球，一般孔與加分孔照策略選：
+
+    | 情況 | 進球 | 落點誤差中位 |
+    | --- | --- | --- |
+    | 起始框選對（左框） | 8/9 | 11.3 cm |
+    | 選錯（設定右框、實際左框）：轉塔找到網板後照常投 | 8/9 | 10.9 cm |
+    | 盲投，擺放沒有誤差 | 8/9 | 13.0 cm |
+    | 盲投，橫向偏 5 cm | 8/9 | 10.8 cm |
+    | 盲投，前後偏 10 cm | 9/9 | 11.6 cm |
+    | 盲投，底盤轉 1° | 1/9 | 20.0 cm |
+    | 盲投，底盤轉 2° | 0/9 | 31.1 cm |
+
+    盲投對底盤角度很敏感，放進起始框時要貼齊框線。假 MCU 不計轉動時間，所以沒有找網板花多久的數字；推算每個方向是轉動（90°/s）加停穩 150 ms 加拍照。
+  - 新增 `test_start_box_replaces_grid_cx_and_dist_x`、`test_preview_uses_measured_board_pose`、`test_search_finds_board_and_warns_when_start_box_is_wrong`、`test_blind_shot_after_search_finds_nothing`、`test_board_pose_for_preview_matches_truth`、`test_teleop_start_box_toggle_and_measured_preview`；
+    `test_scattered_misses_do_not_stop_the_loop`、`test_runner_keeps_trying_after_consecutive_misses` 只測看不到板的計數，關掉找網板（找網板會多拍幾張，打亂 FlakyDetector 的順序）。全套 **135 passed、2 skipped**。
+- 沒驗證：實機找網板的時間；真 YOLO 在網板只拍到一部分時（找網板的中間步驟）偵測到幾個孔。
 
 ### 2026-11-10（續 2）：救援卡後「繼續比賽」——計時、球數、校正都沿用
 

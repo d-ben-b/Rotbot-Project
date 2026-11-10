@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field as dc_field
+from dataclasses import dataclass, field as dc_field, replace
 from pathlib import Path
 
 import numpy as np
@@ -180,6 +180,30 @@ class TurretConfig:
 
 
 @dataclass(frozen=True)
+class StartBoxConfig:
+    """起始框：規則書俯視圖在機器人作業區後方兩角（70 × 120 cm）。AI 不開車，前 60 秒都在起始框裡投。
+
+    grid_cx = 網板中心在發射口右邊幾公尺（左框為正、右框為負）；dist_x = 發射口到網板的水平距離。
+    比賽主程式用它取代 field 的 grid_cx、dist_x（那兩個留給模擬與評估）；網頁待命時可切換左框、右框。
+    """
+    side: str = "left"                 # 開機時選哪一邊
+    left_grid_cx: float = 1.65
+    right_grid_cx: float = -1.65
+    dist_x: float = 6.90
+
+
+@dataclass(frozen=True)
+class SearchConfig:
+    """掃視姿態看不到網板時：轉塔左右上下找；一直找不到就用網板設定位置盲投。"""
+    after_misses: int = 2          # 掃視姿態連續幾次解不出網板就開始找
+    yaw_deg: float = 35.0          # 往左右各轉幾度（相機水平視角約 44°，三個方向涵蓋 ±57°）
+    pitch_deg: float = 12.0        # 往上下各轉幾度（垂直視角約 33°）
+    min_holes: int = 3             # 一張至少拍到幾個孔才轉過去對準
+    every_s: float = 10.0          # 找完一輪沒找到，隔多久再找
+    blind_after_s: float = 15.0    # 開賽、救援後繼續、底盤動過之後這麼久都沒看到網板就盲投；0 = 不盲投
+
+
+@dataclass(frozen=True)
 class SimConfig:
     dt: float
     seed: int
@@ -203,6 +227,14 @@ class Config:
     chassis: ChassisConfig = ChassisConfig()
     lit_check: LitCheckConfig = LitCheckConfig()
     turret: TurretConfig = TurretConfig()
+    start_box: StartBoxConfig = StartBoxConfig()
+    search: SearchConfig = SearchConfig()
+
+    def at_start_box(self, side: str) -> "Config":
+        """field 的 grid_cx、dist_x 換成起始框（"left" / "right"）的值。"""
+        b = self.start_box
+        gx = {"left": b.left_grid_cx, "right": b.right_grid_cx}[side]
+        return replace(self, field=replace(self.field, grid_cx=gx, dist_x=b.dist_x))
 
     @property
     def k_drag(self) -> float:
@@ -265,4 +297,6 @@ def load_config(path: str | Path | None = None) -> Config:
         chassis=ChassisConfig(**raw.get("chassis", {})),
         lit_check=LitCheckConfig(**raw.get("lit_check", {})),
         turret=TurretConfig(**raw.get("turret", {})),
+        start_box=StartBoxConfig(**raw.get("start_box", {})),
+        search=SearchConfig(**raw.get("search", {})),
     )

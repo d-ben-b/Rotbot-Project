@@ -141,9 +141,13 @@ def main():
         print(mcu_start_message(mcu))
     camera = make_camera(args.camera, cfg, mcu)
 
+    from rotbot.teleop.start_box import StartBoxChoice
+    box = StartBoxChoice(cfg, None if sil is not None or mcu is None else cfg.start_box.side)   # 模擬：網板置中 6 m
+    preview = AimPreview(box.cfg)
+    box.listeners.append(preview.set_cfg)
     server = TeleopServer(mcu=mcu, camera=camera,
                           sm=MatchStateMachine(auto_s=args.auto_s, match_s=args.match_s),
-                          rpm_preset=args.rpm, preview=AimPreview(cfg), chassis=cfg.chassis)
+                          rpm_preset=args.rpm, preview=preview, chassis=cfg.chassis, start_box=box)
     ssl_ctx = None
     scheme = "http"
     if args.tls_cert:

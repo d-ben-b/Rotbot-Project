@@ -94,10 +94,18 @@ def _miss_steps(n):
     return [False] * (3 * n)
 
 
+def _no_search(cfg):
+    """關掉找網板和盲投：只測「看不到板」的計數（找網板會多拍好幾張，打亂 FlakyDetector 的順序）。"""
+    import dataclasses
+
+    from rotbot.config import SearchConfig
+    return dataclasses.replace(cfg, search=SearchConfig(after_misses=10 ** 6, blind_after_s=0.0))
+
+
 def test_scattered_misses_do_not_stop_the_loop():
     """看不到板的次數累計超過 5 次、但中間有看到時，主迴圈照樣投（以前累計 6 次就停）。"""
     from rotbot.pipeline.loop import ControlLoop
-    cfg = load_config()
+    cfg = _no_search(load_config())
     mcu = FakeMCU()
     cam = TwinCamera(cfg, mcu, lit_bonus=1)
     det = FlakyDetector(TwinDetector(cam, noise_px=0.0), (_miss_steps(3) + [True]) * 2)
@@ -111,7 +119,7 @@ def test_runner_keeps_trying_after_consecutive_misses():
     """連續 7 次看不到板：AI 不放棄（網頁顯示原因），看到板之後繼續投。"""
     from rotbot.pipeline.loop import AutonomousRunner, ControlLoop
     from rotbot.pipeline.state_machine import GameState, MatchStateMachine
-    cfg = load_config()
+    cfg = _no_search(load_config())
     mcu = FakeMCU()
     cam = TwinCamera(cfg, mcu, lit_bonus=1)
     det = FlakyDetector(TwinDetector(cam, noise_px=0.0), _miss_steps(7))
@@ -253,3 +261,75 @@ def test_autonomous_loop_with_firmware():
     assert all(l.error_cm is not None for l in logs)
     assert sum(l.hit for l in logs) >= 5
     assert np.mean([l.total_ms for l in logs]) < 6700            # 27 球 / 180 秒的節拍
+
+
+def test_search_finds_board_and_warns_when_start_box_is_wrong():
+    """選錯起始框（設定網板在左前方，實際在右前方）：掃視姿態看不到 → 轉塔找到網板 → 照常投，並提醒左右選錯。"""
+    from rotbot.decision import ballistics
+    from rotbot.pipeline.loop import ControlLoop
+    base = load_config()
+    truth, wrong = base.at_start_box("left"), base.at_start_box("right")
+    mcu = FakeMCU()
+    cam = TwinCamera(truth, mcu, lit_bonus=1)
+    loop = ControlLoop(wrong, cam, TwinDetector(cam, noise_px=0.0), mcu, rpm=2400)
+    assert loop.survey[1] < -10                             # 依錯的設定往左看
+    log = None
+    for _ in range(4):
+        log = loop.step()
+        if log is not None:
+            break
+    assert log is not None and log.source == "camera"
+    assert abs(loop.survey[1] - ControlLoop.default_survey_pose(truth)[1]) < 3.0   # 掃視姿態改到網板那邊
+    assert "看到網板在右邊" in loop.side_warning and "設定的網板在左邊" in loop.side_warning
+    R_bl, t_bl = frames.board_to_launcher(truth)          # 瞄的是真正的孔位
+    g, i = log.target.split("#")
+    C = next(C for gg, ii, _d, C in truth.hole_centers() if (gg, ii) == (g, int(i)))
+    want = [np.degrees(v) for v in ballistics.aim_at_point(R_bl @ C + t_bl, truth)]
+    assert (log.pitch_deg, log.yaw_deg) == pytest.approx(want, abs=0.05)
+
+
+def test_blind_shot_after_search_finds_nothing():
+    """開賽後一直看不到網板：先轉塔找一輪，過了 blind_after_s 就用起始框設定的位置盲投一般孔（不投沒亮的加分孔）。"""
+    import dataclasses
+
+    from rotbot.config import SearchConfig
+    from rotbot.decision import ballistics
+    from rotbot.pipeline.loop import AutonomousRunner, ControlLoop
+    from rotbot.pipeline.state_machine import MatchStateMachine
+    cfg = dataclasses.replace(load_config().at_start_box("left"), search=SearchConfig(blind_after_s=0.3))
+    mcu = FakeMCU()
+    cam = TwinCamera(cfg, mcu)
+    det = FlakyDetector(TwinDetector(cam), [False] * 10 ** 4)          # 什麼都拍不到
+    loop = ControlLoop(cfg, cam, det, mcu, rpm=2400)
+    log = None
+    end = time.monotonic() + 10.0
+    while log is None and time.monotonic() < end:
+        log = loop.step()
+    assert log is not None and log.source == "blind" and log.target.startswith("main#")
+    assert det.calls >= 3 * (1 + 8)                         # 掃視姿態 + 找網板 8 個方向都拍過
+    R_bl, t_bl = frames.board_to_launcher(cfg)
+    C = next(C for g, i, _d, C in cfg.hole_centers() if (g, i) == ("main", int(log.target.split("#")[1])))
+    want = [np.degrees(v) for v in ballistics.aim_at_point(R_bl @ C + t_bl, cfg)]
+    assert (log.pitch_deg, log.yaw_deg) == pytest.approx(want, abs=0.01)
+    sm = MatchStateMachine()
+    sm.start()
+    runner = AutonomousRunner(sm, lambda: loop)
+    runner.loop = loop
+    assert "盲投" in runner.warning()
+
+
+def test_board_pose_for_preview_matches_truth():
+    """AI 看到網板後，給預估落點用的網板位姿（發射點系）和真實位置差 1 cm、0.1° 以內；底盤動過就作廢。"""
+    from rotbot.pipeline.loop import ControlLoop
+    cfg = load_config().at_start_box("right")
+    mcu = FakeMCU()
+    cam = TwinCamera(cfg, mcu, lit_bonus=1)
+    loop = ControlLoop(cfg, cam, TwinDetector(cam, noise_px=0.0), mcu, rpm=2400)
+    assert loop.board_in_launcher() is None
+    assert loop.step() is not None
+    R, t = loop.board_in_launcher()
+    R_bl, t_bl = frames.board_to_launcher(cfg)
+    assert np.linalg.norm(t - t_bl) < 0.01
+    assert np.degrees(np.arccos(np.clip((np.trace(R_bl.T @ R) - 1) / 2, -1, 1))) < 0.1
+    loop.forget_board()
+    assert loop.board_in_launcher() is None

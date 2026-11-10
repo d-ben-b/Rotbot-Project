@@ -117,3 +117,20 @@ def test_server_reports_preview_and_draws_hud():
     server._draw_hud(img, 960 / CFG.camera.width)          # 沒有相機：沒有畫面標記，但有小地圖
     assert img[-40:, -100:].any()
     assert TeleopServer(mcu=None, camera=None).snapshot()["preview"] is None
+
+
+def test_preview_uses_measured_board_pose():
+    """AI 量到的網板位置：和設定相同時結果一樣；網板往右 0.5 m 時落點在網板上往左 0.5 m；傾斜時落點仍在網板平面上。"""
+    pv = AimPreview(CFG)
+    p, y = _aim("main", 4)
+    a = pv.predict(p, y, RPM)
+    R_bl, t_bl = frames.board_to_launcher(CFG)
+    b = pv.predict(p, y, RPM, board=(R_bl, t_bl))
+    assert b.measured and not a.measured
+    assert (b.z, b.y) == pytest.approx((a.z, a.y), abs=1e-6) and b.hole == "main#4"
+    c = pv.predict(p, y, RPM, board=(R_bl, t_bl + np.array([0.0, 0.0, 0.5])))
+    assert c.z == pytest.approx(a.z - 0.5, abs=0.005) and c.hole == "main#3"
+    t = math.radians(5.0)                                   # 網板上緣往後倒 5°（安裝角約 85°）
+    Rx = np.array([[1, 0, 0], [0, math.cos(t), -math.sin(t)], [0, math.sin(t), math.cos(t)]])
+    P = pv.landing_point(p, y, RPM, board=(R_bl @ Rx, t_bl))
+    assert abs((R_bl @ Rx)[:, 2] @ (P - t_bl)) < 1e-3

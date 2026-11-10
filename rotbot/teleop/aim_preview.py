@@ -6,7 +6,9 @@
 這裡用跟 AI 瞄準同一個彈道模型（含阻力）往前算：
   1. v0 = v0_model × 飛輪目標轉速 / rpm_model（打牆擬合後 v0_model 就是實測值，見 tools/fit_ballistics.py）
   2. 有校正器時扣掉它學到的全域偏差（AI 自主 60 秒、或賽前練習存的校正檔學到的「手感」）
-  3. 彈道穿過網板平面 x = dist_x 的點 → 最近的孔、球會不會整顆進
+  3. 彈道穿過網板平面的點 → 最近的孔、球會不會整顆進
+     網板位置：AI 量到過就用它（board，和 AI 瞄準同一份量測，歸零與擺放誤差會抵掉）；
+     沒有就用設定（field.yaml；比賽主程式換成起始框），網板視為 x = dist_x 的鉛直面
   4. 用轉塔角度算同軸相機的外參，把落點投影到畫面上（HUD 標記）＋右下角網板小地圖
 """
 from __future__ import annotations
@@ -40,12 +42,18 @@ class Preview:
     rpm: float                        # 計算用的飛輪轉速
     px: tuple[float, float] | None    # 落點在相機影像上的像素（原解析度）；None = 沒有內參或在相機後方
     px_r: float = 0.0                 # 球在影像上的半徑（像素）
+    measured: bool = False            # True = 用 AI 量到的網板位置；False = 用設定的位置
 
 
 class AimPreview:
     def __init__(self, cfg: Config, calib=None):
         """calib：AdaptiveCalibrator，或回傳它（或 None）的函式——比賽主程式每場換新的校正器。"""
-        self.cfg, self.calib = cfg, calib
+        self.calib = calib
+        self.set_cfg(cfg)
+
+    def set_cfg(self, cfg: Config) -> None:
+        """換設定（網頁切換起始框時）。孔位用網板座標加上 grid_cx、grid_cy，小地圖跟著設定畫。"""
+        self.cfg = cfg
         f = cfg.field
         self.holes = [(g, i, d, f.grid_cx + C[0], f.grid_cy + C[1]) for g, i, d, C in cfg.hole_centers()]
 
@@ -56,37 +64,70 @@ class AimPreview:
         c = self.calib() if callable(self.calib) else self.calib
         return (0.0, 0.0) if c is None else (float(c.g_bias[0]), float(c.g_bias[1]))
 
-    def landing(self, pitch_deg: float, yaw_deg: float, rpm: float) -> tuple[float, float] | None:
-        """(橫向 z, 離地 y)；球到不了網板平面（含先落地）回傳 None。"""
+    def landing_point(self, pitch_deg: float, yaw_deg: float, rpm: float, board=None) -> np.ndarray | None:
+        """彈道穿過網板平面的點（發射點系：x 前、y 上、z 右）；到不了網板（含先落地）回傳 None。
+
+        board = (R_bl, t_bl) 網板 → 發射點系；None 用設定的位置（x = dist_x 的鉛直面）。
+        先當成鉛直面解出水平距離，再用割線法修正網板傾斜（安裝角約 85°，PnP 量得到）。
+        """
         if rpm <= 0:
             return None
+        R_bl, t_bl = board if board is not None else frames.board_to_launcher(self.cfg)
+        n = R_bl[:, 2]                                   # 網板法向量（朝機器人）
         # 校正器下指令 = 模型解 + 修正 → 實際落點 ≈ 模型(指令 − 修正)
         bp, by = self._bias()
-        shoot = ballistics.model_shoot(self.cfg, self.v0_for(rpm))
-        land = shoot(math.radians(pitch_deg) - bp, math.radians(yaw_deg) - by)
-        if land is None or land[1] < 0:                  # 到網板前就落地
+        pitch, yaw = math.radians(pitch_deg) - bp, math.radians(yaw_deg) - by
+        model = ballistics.aim_model(self.cfg, self.v0_for(rpm))
+        d = np.array([math.cos(yaw), 0.0, math.sin(yaw)])
+
+        def off_plane(s):                                # 水平距離 s 處離網板平面多遠；到不了回 None
+            h = model.height(s, pitch)
+            return None if h is None else float(n @ (np.array([s * d[0], h, s * d[2]]) - t_bl))
+
+        if abs(n @ d) < 1e-6:
             return None
-        return land
+        s = float(n @ t_bl / (n @ d))
+        for _ in range(5):
+            f0, f1 = off_plane(s), off_plane(s + 0.01)
+            if f0 is None or f1 is None:
+                return None
+            if abs(f0) < 1e-5 or f1 == f0:
+                break
+            s -= f0 * 0.01 / (f1 - f0)
+        h = model.height(s, pitch)
+        if h is None or h + self.cfg.field.launch_h < 0:   # 到網板前就落地
+            return None
+        return np.array([s * d[0], h, s * d[2]])
+
+    def landing(self, pitch_deg: float, yaw_deg: float, rpm: float) -> tuple[float, float] | None:
+        """設定的網板位置上的 (橫向 z, 離地 y)；球到不了網板平面（含先落地）回傳 None。"""
+        p = self.landing_point(pitch_deg, yaw_deg, rpm)
+        return None if p is None else (float(p[2]), float(p[1] + self.cfg.field.launch_h))
 
     def predict(self, pitch_deg: float, yaw_deg: float, rpm: float,
-                K: np.ndarray | None = None) -> Preview | None:
-        land = self.landing(pitch_deg, yaw_deg, rpm)
-        if land is None:
+                K: np.ndarray | None = None, board=None) -> Preview | None:
+        """board：AI 量到的網板位姿 (R_bl, t_bl)，None 用設定的位置。"""
+        P = self.landing_point(pitch_deg, yaw_deg, rpm, board)
+        if P is None:
             return None
-        z, y = land
+        R_bl, t_bl = board if board is not None else frames.board_to_launcher(self.cfg)
+        bx, by, _ = R_bl.T @ (P - t_bl)                  # 網板座標：主九宮格中心為原點，x 右、y 上
+        f = self.cfg.field
+        z, y = f.grid_cx + bx, f.grid_cy + by            # 和 self.holes、小地圖同一套座標
         g, i, d, hz, hy = min(self.holes, key=lambda h: math.hypot(z - h[3], y - h[4]))
         ez, ey = z - hz, y - hy
         inside = math.hypot(ez, ey) <= (d - self.cfg.ball.diameter) / 2
         px, px_r = None, 0.0
         if K is not None:                             # 同軸相機：外參跟著轉塔角度走（不受校正偏差影響）
             R_cl, t_cl = frames.camera_extrinsic_at(self.cfg, pitch_deg, yaw_deg)
-            pc = R_cl.T @ (np.array([self.cfg.field.dist_x, y - self.cfg.field.launch_h, z]) - t_cl)
+            pc = R_cl.T @ (P - t_cl)
             if pc[2] > 0.1:
                 uv = K @ pc
                 px = (float(uv[0] / uv[2]), float(uv[1] / uv[2]))
                 px_r = float(K[0, 0] * self.cfg.ball.diameter / 2 / pc[2])
-        return Preview(z=z, y=y, hole=f"{g}#{i}", label=hole_label(g, i), off_cm=(ez * 100, ey * 100),
-                       inside=inside, v0=self.v0_for(rpm), rpm=rpm, px=px, px_r=px_r)
+        return Preview(z=float(z), y=float(y), hole=f"{g}#{i}", label=hole_label(g, i),
+                       off_cm=(float(ez) * 100, float(ey) * 100), inside=bool(inside), v0=self.v0_for(rpm),
+                       rpm=rpm, px=px, px_r=px_r, measured=board is not None)
 
     # ── HUD ─────────────────────────────────────────
     def draw(self, img: np.ndarray, pv: Preview | None, scale: float = 1.0) -> None:

@@ -32,11 +32,16 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 def build_robot(cfg: Config, mcu, camera, detector, *, rpm: float = 2400, calib_path: str | None = None,
                 practice: int = 0, observe_impact=None, auto_s: float = 60.0, match_s: float = 180.0,
-                seed: int = 0, on_log=None):
-    """組裝 (TeleopServer, AutonomousRunner, SharedCamera)；runner 尚未 start()。"""
+                seed: int = 0, on_log=None, start_box: str | None = None):
+    """組裝 (TeleopServer, AutonomousRunner, SharedCamera)；runner 尚未 start()。
+
+    start_box："left" / "right" = 起始框（field.yaml 的 start_box，網頁待命時可切換）；None = field 原本的位置。
+    """
     from rotbot.decision.calibration import AdaptiveCalibrator
     from rotbot.sim.closed_loop import new_calibrator, practice_calibration
+    from rotbot.teleop.start_box import StartBoxChoice
 
+    box = StartBoxChoice(cfg, start_box)
     shared = SharedCamera(camera, settle_s=cfg.camera_hw.settle_ms / 1000)   # 轉塔停下後等支架晃動停
     sm = MatchStateMachine(auto_s=auto_s, match_s=match_s)
     if calib_path:
@@ -48,16 +53,17 @@ def build_robot(cfg: Config, mcu, camera, detector, *, rpm: float = 2400, calib_
 
     def make_loop():
         mcu.flywheel(rpm)                                # 哨音一響就起轉
-        return ControlLoop(cfg, shared, detector, mcu, rpm=rpm, calib=base_calib(), sm=sm,
+        return ControlLoop(box.cfg, shared, detector, mcu, rpm=rpm, calib=base_calib(), sm=sm,
                            observe_impact=observe_impact,
                            is_active=lambda: sm.update() == GameState.AUTONOMOUS)
 
     runner = AutonomousRunner(sm, make_loop, on_log=on_log)
     # 預估落點用「這一場」的校正器（AI 自主時學到的偏差，切手動後繼續適用）；開賽前用載入的校正檔
     idle_calib = AdaptiveCalibrator.load(calib_path, cfg.calibration) if calib_path else None
-    preview = AimPreview(cfg, calib=lambda: runner.loop.calib if runner.loop is not None else idle_calib)
+    preview = AimPreview(box.cfg, calib=lambda: runner.loop.calib if runner.loop is not None else idle_calib)
+    box.listeners.append(preview.set_cfg)
     server = TeleopServer(mcu=mcu, camera=shared, sm=sm, rpm_preset=int(rpm), preview=preview,
-                          chassis=cfg.chassis, ai=runner)
+                          chassis=cfg.chassis, ai=runner, start_box=box)
     return server, runner, shared
 
 
@@ -72,6 +78,8 @@ def main():
     ap.add_argument("--host", default="0.0.0.0")
     ap.add_argument("--port", type=int, default=8080)
     ap.add_argument("--auto-s", type=float, default=60.0)
+    ap.add_argument("--start-box", choices=["left", "right"],
+                    help="起始框（預設 field.yaml 的 start_box.side；--sim 預設網板置中 6 m，給了就模擬這個起始框）")
     args = ap.parse_args()
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -98,9 +106,10 @@ def main():
     observe = None
     if args.sim:
         from rotbot.sim.twin import TwinCamera, TwinDetector, TwinImpactObserver
-        camera = TwinCamera(cfg, mcu, lit_bonus=1)
+        truth = cfg.at_start_box(args.start_box) if args.start_box else cfg   # 數位孿生的網板真實位置
+        camera = TwinCamera(truth, mcu, lit_bonus=1)
         detector = TwinDetector(camera, noise_px=0.5)
-        observe = TwinImpactObserver(cfg, np.random.default_rng(1))
+        observe = TwinImpactObserver(truth, np.random.default_rng(1))
     else:
         from rotbot.perception.camera import open_camera
         from rotbot.perception.detector import YoloDetector
@@ -111,13 +120,18 @@ def main():
         res = "" if log.hit is None else (f"命中 +{log.points}" if log.hit else "未中")
         if log.source == "last_seen":
             res += "（沒看到網板，沿用上次的位置）"
+        elif log.source == "blind":
+            res += "（一直找不到網板，用起始框設定的位置盲投）"
         print(f"[AI] 第 {log.ball:2d} 球 {log.target}{'★' if log.is_lit else ''} "
               f"仰角 {log.pitch_deg:6.2f}° 水平 {log.yaw_deg:6.2f}° {log.total_ms:5.0f} ms {res}")
 
     server, runner, shared = build_robot(cfg, mcu, camera, detector, rpm=args.rpm,
                                          calib_path=args.calib, practice=9 if args.sim else 0,
-                                         observe_impact=observe, auto_s=args.auto_s, on_log=on_log)
+                                         observe_impact=observe, auto_s=args.auto_s, on_log=on_log,
+                                         start_box=args.start_box or (None if args.sim else cfg.start_box.side))
     print(mcu_start_message(mcu))
+    if server.start_box.side is not None:
+        print(f"[起始框] {server.start_box.describe()}：不對就在網頁待命時切換左框、右框")
     runner.start()
     print("\n操控頁：http://localhost:%d" % args.port)
     for ip in lan_ips():

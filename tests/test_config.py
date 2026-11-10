@@ -30,3 +30,13 @@ def test_missing_aim_section_defaults_to_vacuum(tmp_path):
     p = tmp_path / "old.yaml"
     p.write_text(yaml.safe_dump(raw, allow_unicode=True), encoding="utf-8")
     assert load_config(p).aim.model == "vacuum"
+
+
+def test_start_box_replaces_grid_cx_and_dist_x():
+    """起始框：左框網板在右邊（grid_cx 正）、右框在左邊；只換 grid_cx 與 dist_x，field 原本的值留給模擬。"""
+    cfg = load_config()
+    left, right = cfg.at_start_box("left"), cfg.at_start_box("right")
+    assert left.field.grid_cx == cfg.start_box.left_grid_cx > 0
+    assert right.field.grid_cx == cfg.start_box.right_grid_cx < 0
+    assert left.field.dist_x == right.field.dist_x == cfg.start_box.dist_x
+    assert left.field.grid_cy == cfg.field.grid_cy and cfg.field.grid_cx == 0.0

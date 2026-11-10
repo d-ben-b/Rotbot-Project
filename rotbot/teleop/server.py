@@ -18,6 +18,8 @@
     重開機：再重送 AIM 目標與飛輪轉速，網頁顯示警告直到按「重置」。
     急停（兩軸斷電推不動，field.yaml turret.holds_unpowered）：保留急停前的角度，不用重新歸零。
   * 按「重置」回待命時轉塔轉回 (0°, 0°)：每次關機時停在同一個位置。
+  * 起始框（start_box）：待命時切換左框、右框，AI 的掃視方向、盲投與預估落點用的網板位置跟著換。
+  * 預估落點：AI 量到過網板就用它的位置（ai.board_pose()），沒有才用設定的位置。
   * 救援卡：比賽中按實體急停（MCU 回報急停）網頁跟著進入急停；放開後按「繼續比賽」，
     計時、球數、校正都沿用（60 秒內回 AI 自主，之後回到急停前的模式）。急停時也能按「歸零」。
 """
@@ -138,9 +140,10 @@ class TeleopServer:
     def __init__(self, mcu=None, camera=None, sm: MatchStateMachine | None = None,
                  deadman_s: float = 0.3, rpm_preset: int = 2400, max_dps: float = 60.0,
                  jog_refresh_s: float = 0.2, video_fps: float = 15.0, preview=None, chassis=None,
-                 ai=None):
+                 ai=None, start_box=None):
         self.mcu = mcu                      # SerialMCU（或測試替身）；None = 乾跑
         self.preview = preview              # AimPreview：預估落點（None = 不顯示）
+        self.start_box = start_box          # StartBoxChoice：待命時切換左框、右框（None = 不能切）
         # AutonomousRunner（None = 沒有 AI）：warning() 網頁警告、note_chassis_moved() 手動開過車、
         # resume_blocker() 交還 AI 前的檢查
         self.ai = ai
@@ -228,6 +231,8 @@ class TeleopServer:
             t="state", game=st.value, game_label=GAME_LABEL[st.value],
             elapsed=round(self.sm.elapsed, 2), remaining=round(self.sm.remaining, 2),
             auto_locked=self.sm.autonomous_locked, can_resume=self.sm.can_resume,
+            start_box=self.start_box.describe() if self.start_box is not None else "",
+            box_side=self.start_box.side if self.start_box is not None else None,
             lock_left=round(max(0.0, self.sm.auto_s - self.sm.elapsed), 1) if self.sm.t_start else None,
             role=client.role if client else None, has_driver=self.driver is not None,
             viewers=len(self.clients), mcu_connected=self.mcu is not None, mcu=mcu,
@@ -258,9 +263,10 @@ class TeleopServer:
         if self.preview is None or s is None:
             return None, False
         fly_on = s.rpm_target > 0
+        board_pose = getattr(self.ai, "board_pose", None)     # AI 量到的網板位置（沒有就用設定）
         try:
             pv = self.preview.predict(s.pitch_deg, s.yaw_deg, s.rpm_target if fly_on else self.rpm_preset,
-                                      self._intrinsics())
+                                      self._intrinsics(), board=board_pose() if board_pose else None)
         except Exception:
             return None, fly_on
         return pv, fly_on
@@ -272,6 +278,7 @@ class TeleopServer:
         if pv is None:
             return dict(ok=False, fly_on=fly_on)
         return dict(ok=True, fly_on=fly_on, hole=pv.hole, label=pv.label, inside=bool(pv.inside),
+                    measured=pv.measured,
                     off_cm=[round(float(v), 1) for v in pv.off_cm],
                     z=round(float(pv.z), 3), y=round(float(pv.y), 3), v0=round(float(pv.v0), 2), rpm=pv.rpm)
 
@@ -363,6 +370,21 @@ class TeleopServer:
         msg = f"繼續比賽：{GAME_LABEL[st.value]}，計時沒有重設（已過 {self.sm.elapsed:.0f} s）"
         if st == GameState.AUTONOMOUS and self.sm.autonomous_locked:
             msg += "；60 秒內只能 AI"
+        self._log(msg)
+        await self._notice(c, msg)
+
+    async def _select_box(self, c: _Client, side: str):
+        """待命時切換起始框：AI 的掃視方向、盲投和預估落點都跟著換（按「開始」時才交給 AI）。"""
+        if self.start_box is None:
+            await self._notice(c, "這個程式沒有起始框設定")
+            return
+        if self.sm.update() != GameState.IDLE:
+            await self._notice(c, "只能在待命時切換起始框")
+            return
+        self.start_box.select(side)
+        if self.ai is not None:
+            self.ai.note_chassis_moved()
+        msg = f"起始框：{self.start_box.describe()}"
         self._log(msg)
         await self._notice(c, msg)
 
@@ -515,9 +537,13 @@ class TeleopServer:
                 await self._safe_stop("交還 AI")
         elif name == "resume":
             await self._resume(c)
+        elif name in ("box_left", "box_right"):
+            await self._select_box(c, name.removeprefix("box_"))
         elif name == "reset":
             self.sm.reset()
             self.last_error = self.mcu_warning = ""
+            if self.ai is not None:
+                self.ai.note_chassis_moved()               # 下一場前機器人可能被搬動：AI 量到的網板位置作廢
             await self._park()
         elif name == "stop":
             await self._safe_stop(f"#{c.id} 按 STOP")
