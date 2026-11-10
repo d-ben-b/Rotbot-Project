@@ -126,7 +126,7 @@ search:               # 掃視姿態看不到網板時（docs/00_todo.md 第 6 �
   every_s: 10.0       # 找完一輪沒找到，隔多久再找
   blind_after_s: 15.0 # 開賽、救援後繼續、底盤動過之後這麼久都沒看到網板就盲投（用 start_box 的位置）；0 = 不盲投
 
-turret:               # 轉塔角度存檔（2026-11-10：硬體組回報水平斷電後推不動，俯仰 HBT5776C 推測也推不動，待實測）
+turret:               # 轉塔角度存檔（2026-11-10：硬體組回報水平斷電後推不動，俯仰 XH5776C 推測也推不動，待實測）
   holds_unpowered: true               # true：Orin 存最後的角度，開機時 MCU 沒歸零就自動補回；急停後保留角度
                                       # 實測斷電推得動就改 false：回到每次擺好姿勢按「歸零」
   pose_file: runs/turret_pose.json    # Orin 上的存檔（相對 repo 根目錄；runs/ 不進 git）

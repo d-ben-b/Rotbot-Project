@@ -142,10 +142,10 @@
 #define JOG_MAX_DPS 60.0f            // 手動速度上限
 #endif
 #ifndef STEP_PULSE_US
-#define STEP_PULSE_US 5              // STEP 脈寬：TMC2209 要 >= 0.1 us；HBT5756C 閉環一體機手冊要 > 1.5 us
+#define STEP_PULSE_US 5              // STEP 脈寬：TMC2209 要 >= 0.1 us；XH5776C 說明書要 >= 2.5 us
 #endif
 #ifndef DIR_SETUP_US
-#define DIR_SETUP_US 5               // DIR 改變後到下一個 STEP：HBT5756C 手冊要 >= 2 us
+#define DIR_SETUP_US 10              // DIR 改變後到下一個 STEP：XH5776C 說明書要 > 5 us；ULN2003 關斷比導通慢約 1 us，留餘裕
 #endif
 
 // ===== 飛輪 =====
