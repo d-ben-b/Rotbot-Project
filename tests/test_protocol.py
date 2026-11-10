@@ -94,6 +94,34 @@ def test_reboot_detected_from_status_without_boot_event():
     assert mcu.reboots == 1 and mcu.pose_before_reboot is None
 
 
+def test_estop_keeps_pose_when_turret_holds_unpowered():
+    """兩軸斷電推不動（keep_pose_on_estop）：急停不算重開機，記下急停前的角度給 restore_zero()；已歸零的角度交給存檔。"""
+    from rotbot.actuation.link import SerialMCU
+
+    class Store:
+        def __init__(self):
+            self.puts = []
+
+        def put(self, *pose):
+            self.puts.append(pose)
+
+    store = Store()
+    mcu = SerialMCU("loop://", pose_store=store, keep_pose_on_estop=True)
+    mcu._opened = True
+
+    def st(flags, p_cdeg, y_cdeg):
+        mcu._handle_line(P.encode_line("ST", 0, flags, p_cdeg, y_cdeg, 0, 0, 0, 0, 0, -1).strip())
+
+    st(P.F_HOMED, 1500, 300)
+    assert store.puts == [(15.0, 3.0, False)]
+    st(P.F_ESTOP, 1500, 300)
+    assert mcu.reboots == 0 and mcu.zero_lost == 1 and mcu.zero_lost_why == "estop"
+    assert mcu.lost_pose == (15.0, 3.0, False)
+    st(P.F_ESTOP, 1500, 300)
+    assert mcu.zero_lost == 1                                # 同一次急停只算一次
+    assert store.puts == [(15.0, 3.0, False)]               # 未歸零的狀態不存
+
+
 def test_wheel_reply_parsed():
     wh = P.parse_frame(P.decode_line(P.encode_line("WH", 7, 482, -15, 0, 1203)))
     assert wh.kind == "WH" and wh.seq == 7 and wh.wheels == (48.2, -1.5, 0.0, 120.3)

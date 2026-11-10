@@ -243,6 +243,55 @@ def test_teleop_restores_zero_after_mcu_reboot():
             asyncio.run(scenario(mcu))
 
 
+def test_teleop_keeps_zero_through_estop_and_parks_on_reset():
+    """兩軸斷電推不動時按實體急停：網頁說明保留了角度、MCU 不用重新歸零；按「重置」轉塔轉回 (0°, 0°)。"""
+    from tools.mcu_sil import CompilerNotFound, SilProcess, build
+    try:
+        build("full")
+    except CompilerNotFound as e:
+        pytest.skip(str(e))
+    from rotbot.actuation.link import SerialMCU
+
+    async def scenario(mcu):
+        server = TeleopServer(mcu=mcu, camera=None, sm=MatchStateMachine(auto_s=0.2, match_s=60))
+        runner, port = await _serve(server)
+        try:
+            async with aiohttp.ClientSession() as s:
+                ws = await s.ws_connect(f"http://127.0.0.1:{port}/ws")
+                mcu.write_raw(b"!ESTOP 1\n")
+                n = await _wait(ws, lambda m: m["t"] == "notice" and m["msg"].startswith("急停"))
+                assert "保留急停前的角度（俯仰 12.00°、水平 -5.00°）" in n["msg"], n["msg"]
+                st = mcu.get_status()
+                assert st.homed and (st.pitch_deg, st.yaw_deg) == (12.0, -5.0)
+                assert server.mcu_warning == ""                # 急停不是故障：不留警告
+                mcu.write_raw(b"!ESTOP 0\n")
+                for _ in range(100):
+                    if not mcu.get_status().estop:
+                        break
+                    await asyncio.sleep(0.02)
+                await ws.send_json({"t": "cmd", "name": "reset"})
+                for _ in range(200):
+                    st = mcu.get_status()
+                    if not st.moving and (st.pitch_deg, st.yaw_deg) == (0.0, 0.0):
+                        break
+                    await asyncio.sleep(0.02)
+                assert (st.pitch_deg, st.yaw_deg) == (0.0, 0.0)
+                await ws.close()
+        finally:
+            await runner.cleanup()
+
+    with SilProcess("full") as sil:
+        with SerialMCU(sil.url, keep_pose_on_estop=True) as mcu:
+            mcu.zero(0.0, 0.0)
+            mcu.aim(12.0, -5.0)
+            for _ in range(200):
+                st = mcu.get_status()
+                if not st.moving and (st.pitch_deg, st.yaw_deg) == (12.0, -5.0):
+                    break
+                time.sleep(0.02)
+            asyncio.run(scenario(mcu))
+
+
 def test_teleop_blocks_handover_when_ai_cannot_see_board():
     """手動開車會通知 AI（網板位置作廢）；AI 不能接手時「交還 AI」被拒、留在手動，並說明原因。"""
     class DriveMCU(FakeMCU):

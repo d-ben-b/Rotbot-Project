@@ -110,6 +110,11 @@ chassis:              # 底盤（手動操控開車）；四輪 M1 左前、M2 �
   mecanum: true       # 麥克納姆輪：方向鍵 ←→ / 左搖桿左右 = 橫移
   strafe_invert: false  # 實測橫移方向反了改 true
 
+turret:               # 轉塔角度存檔（2026-11-10：硬體組回報水平斷電後推不動，俯仰 HBT5776C 推測也推不動，待實測）
+  holds_unpowered: true               # true：Orin 存最後的角度，開機時 MCU 沒歸零就自動補回；急停後保留角度
+                                      # 實測斷電推得動就改 false：回到每次擺好姿勢按「歸零」
+  pose_file: runs/turret_pose.json    # Orin 上的存檔（相對 repo 根目錄；runs/ 不進 git）
+
 sim:
   dt: 0.001       # 物理積分步長 (s)
   seed: 42

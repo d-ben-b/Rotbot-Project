@@ -78,11 +78,16 @@ class SerialMCU(ActuatorLink):
     * Arduino Uno 開埠會被 DTR 重置（bootloader ~1.6 s）→ open() 先等 EV BOOT 再 PING；
       NUCLEO 的 ST-LINK 序列埠不會重置 → 直接 PING（MCU 保留上次的歸零狀態）。
     * 連線中 MCU 重開機（電壓掉、碰到 RESET）：收到 EV BOOT，或狀態從「已歸零」變「未歸零」且不是急停
-      → reboots +1，pose_before_reboot 記下重開機前最後一筆角度；restore_after_reboot() 用它補回歸零。
+      → reboots +1，pose_before_reboot 記下重開機前最後一筆角度；restore_zero() 用它補回歸零。
+    * 兩軸斷電後推不動時（field.yaml 的 turret.holds_unpowered）：
+      - pose_store：每筆已歸零的角度存檔；open() 時 MCU 沒歸零（整台斷電再開）就用存檔自動補回。
+      - keep_pose_on_estop：急停（MCU 清掉「已歸零」、步數不變）也能用 restore_zero() 補回。
+      zero_lost 每次失去歸零 +1（重開機、急停），zero_lost_why 是原因；伺服器看到變化就呼叫 restore_zero()。
     """
 
     def __init__(self, url: str, baud: int = 115200, timeout: float = 0.15, retries: int = 3,
-                 boot_wait: float = 3.0, poll_hz: float = 10.0, on_event=None):
+                 boot_wait: float = 3.0, poll_hz: float = 10.0, on_event=None, pose_store=None,
+                 keep_pose_on_estop: bool = False):
         self.url, self.baud = url, baud
         self.timeout, self.retries = timeout, retries
         self.boot_wait, self.poll_hz = boot_wait, poll_hz
@@ -102,6 +107,13 @@ class SerialMCU(ActuatorLink):
         self.resets_on_open = True
         self.reboots = 0                            # open() 之後偵測到的 MCU 重開機次數
         self.pose_before_reboot: tuple[float, float, bool] | None = None   # (俯仰, 水平, 當時在轉)
+        self.pose_store = pose_store                # PoseStore（None = 不存檔）
+        self.keep_pose_on_estop = keep_pose_on_estop
+        self.zero_lost = 0                          # 失去歸零的次數（重開機、急停）
+        self.zero_lost_why = ""                     # "reboot" / "estop"；open() 用存檔補回時是 "saved"
+        self.lost_pose: tuple[float, float, bool] | None = None   # 失去歸零前最後一筆角度
+        self.restored_at_open: tuple[float, float, bool] | None = None   # open() 用存檔補回的 (俯仰, 水平, 存的時候在轉)
+        self.restore_error = ""                     # open() 用存檔補回失敗的原因
         self._homed_pose: tuple[float, float, bool] | None = None          # 最近一筆已歸零時的角度
         self._last_aim: tuple[float, float] | None = None                  # 最後的 AIM 目標（JOG/STOP 後清掉）
         self._last_fly = 0                                                 # 最後的飛輪指令
@@ -130,6 +142,18 @@ class SerialMCU(ActuatorLink):
             raise LinkError(f"{e}：MCU 沒回應。先確認沒有其他程式開著 {self.url}"
                             "（Linux：pgrep -af tools），再按 Nucleo 的黑色 RESET") from e
         self._opened = True
+        saved = self.pose_store.load() if self.pose_store is not None else None
+        if saved is not None and not self.get_status().homed:
+            # 整台斷電再開：MCU 步數從 0 開始，轉塔停在關機前的位置
+            self.zero_lost_why, self.lost_pose = "saved", saved
+            try:
+                got = self.restore_zero()
+            except LinkError as e:                 # 例如存檔角度超出韌體範圍：留給操作手手動歸零
+                self.stats["restore_fail"] += 1
+                self.restore_error = str(e)
+            else:
+                if got is not None:
+                    self.restored_at_open = (*got, saved[2])
         if self.poll_hz > 0:
             p = threading.Thread(target=self._poller, name="mcu-poller", daemon=True)
             p.start()
@@ -211,12 +235,23 @@ class SerialMCU(ActuatorLink):
             w[0].set()
 
     def _track_homed(self, st: Status):
+        was_homed = self.status is not None and self.status.homed and self._opened
         if st.homed:
             self._homed_pose = (st.pitch_deg, st.yaw_deg, st.moving)
-        elif st.estop:                             # 急停時步進斷電、轉塔可能被推動 → 舊角度不能用
-            self._homed_pose = self.pose_before_reboot = None
-        elif self.status is not None and self.status.homed and self._opened:
+            if self.pose_store is not None:
+                self.pose_store.put(st.pitch_deg, st.yaw_deg, st.moving)
+        elif st.estop:
+            if not self.keep_pose_on_estop:        # 急停時步進斷電、轉塔可能被推動 → 舊角度不能用
+                self._homed_pose = self.pose_before_reboot = self.lost_pose = None
+            elif was_homed:                        # 推不動：步數還是對的，restore_zero() 直接用
+                self._last_aim, self._last_fly = None, 0      # MCU 急停時已停飛輪、清掉目標
+                self._lose_zero("estop", self._homed_pose)
+        elif was_homed:
             self._note_reboot()                    # EV BOOT 那行被重開機時的雜訊弄壞也抓得到
+
+    def _lose_zero(self, why: str, pose):
+        self.zero_lost_why, self.lost_pose = why, pose
+        self.zero_lost += 1
 
     def _note_reboot(self):
         now = time.monotonic()
@@ -226,6 +261,7 @@ class SerialMCU(ActuatorLink):
             self.pose_before_reboot, self._homed_pose = self._homed_pose, None
         self._reboot_t = now
         self.reboots += 1
+        self._lose_zero("reboot", self.pose_before_reboot)
 
     def _poller(self):
         period = 1.0 / self.poll_hz
@@ -317,14 +353,15 @@ class SerialMCU(ActuatorLink):
         self.request("ZERO", cdeg(pitch_deg), cdeg(yaw_deg))
         self._last_aim = None                      # MCU 把目標設成目前位置
 
-    def restore_after_reboot(self, timeout: float = 2.0) -> tuple[float, float] | None:
-        """MCU 重開機後補回歸零，回傳設定的 (俯仰, 水平)；沒有可用角度或已經歸零回 None。
+    def restore_zero(self, timeout: float = 2.0) -> tuple[float, float] | None:
+        """MCU 失去歸零後補回，回傳設定的 (俯仰, 水平)；沒有可用角度或已經歸零回 None。
 
-        步進馬達沒有角度感測，角度只是 MCU 記憶體裡的步數；重開機後步數從 0 開始，轉塔仍停在原處。
-        所以 ZERO 設成重開機前的角度，再加上重開機後到現在被 JOG 轉過的步數。
-        之後重送重開機前的 AIM 目標與飛輪轉速，進行中的那一發不必等逾時。
+        步進馬達沒有角度感測，角度只是 MCU 記憶體裡的步數，轉塔仍停在原處：
+          * 重開機、整台斷電再開（存檔）：步數從 0 開始 → ZERO 設成之前的角度，再加上之後被 JOG 轉過的步數。
+            重開機時再重送之前的 AIM 目標與飛輪轉速，進行中的那一發不必等逾時。
+          * 急停（keep_pose_on_estop）：MCU 只清掉「已歸零」、步數沒變 → ZERO 設成目前的步數。
         """
-        pose = self.pose_before_reboot
+        why, pose = self.zero_lost_why, self.lost_pose
         if pose is None:
             return None
         aim, fly = self._last_aim, self._last_fly
@@ -339,13 +376,19 @@ class SerialMCU(ActuatorLink):
                     raise LinkError(f"轉塔 {timeout:.1f} s 內沒停下，無法補回歸零")
                 time.sleep(0.02)
                 st = self.get_status()
-        p, y = pose[0] + st.pitch_deg, pose[1] + st.yaw_deg
+        if why == "estop":
+            p, y = st.pitch_deg, st.yaw_deg
+        else:
+            p, y = pose[0] + st.pitch_deg, pose[1] + st.yaw_deg
         self.zero(p, y)
-        if aim is not None:
-            self.aim(*aim)
-        if fly:
-            self.flywheel(fly)
+        if why == "reboot":
+            if aim is not None:
+                self.aim(*aim)
+            if fly:
+                self.flywheel(fly)
         return p, y
+
+    restore_after_reboot = restore_zero           # 舊名稱
 
     def aim(self, pitch_deg: float, yaw_deg: float) -> None:
         self.request("AIM", cdeg(pitch_deg), cdeg(yaw_deg))

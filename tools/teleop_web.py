@@ -34,6 +34,34 @@ from rotbot.pipeline.state_machine import MatchStateMachine
 from rotbot.teleop.aim_preview import AimPreview
 from rotbot.teleop.server import TeleopServer
 
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+def open_pose_store(cfg, sim: bool):
+    """轉塔角度存檔（field.yaml 的 turret）；韌體模擬器每次開機都在 (0°, 0°)，不讀也不寫實機的存檔。"""
+    if sim or not cfg.turret.holds_unpowered:
+        return None
+    from rotbot.actuation.pose_store import PoseStore
+    return PoseStore(REPO_ROOT / cfg.turret.pose_file)
+
+
+def mcu_start_message(mcu) -> str:
+    """開機時 MCU 的歸零狀態（印在終端機）。"""
+    if mcu.restored_at_open is not None:
+        p, y, moving = mcu.restored_at_open
+        msg = f"[MCU] 用存檔的角度自動歸零：俯仰 {p:.2f}°、水平 {y:.2f}°（{mcu.pose_store.path}）"
+        return msg + ("；存檔時轉塔在轉，角度可能有誤差" if moving else "")
+    st = mcu.get_status()
+    if st.homed:
+        return f"[MCU] 已歸零：俯仰 {st.pitch_deg:.2f}°、水平 {st.yaw_deg:.2f}°"
+    if mcu.restore_error:
+        why = f"存檔補回失敗（{mcu.restore_error}）"
+    elif mcu.pose_store is not None:
+        why = f"沒有角度存檔 {mcu.pose_store.path}"
+    else:
+        why = "沒有開角度存檔（field.yaml turret.holds_unpowered）"
+    return f"⚠️ MCU 尚未歸零（{why}）：擺好起始姿態後在網頁按「歸零」再開始"
+
 
 def lan_ips() -> list[str]:
     """本機區網 IP（給操作手筆電連線用）。"""
@@ -95,6 +123,7 @@ def main():
     cfg = load_config()
     sil = None
     mcu = None
+    store = None
     if args.mcu != "none":
         from rotbot.actuation.link import SerialMCU
         url = args.mcu
@@ -103,11 +132,13 @@ def main():
             sil = SilProcess("full").start()
             url = sil.url
             print(f"[MCU] 韌體模擬器：{sil.banner}")
-        mcu = SerialMCU(url).open()
+        store = open_pose_store(cfg, sim=sil is not None)
+        mcu = SerialMCU(url, pose_store=store, keep_pose_on_estop=cfg.turret.holds_unpowered).open()
         print(f"[MCU] 已連線 {url}，PING={mcu.ping()}")
         if sil is not None:
             mcu.zero(0.0, 0.0)                     # 模擬器開機姿態視為 (0,0)
             mcu.aim(15.0, 0.0)                     # 轉到大約對準網板的掃視姿態，畫面一開就看得到
+        print(mcu_start_message(mcu))
     camera = make_camera(args.camera, cfg, mcu)
 
     server = TeleopServer(mcu=mcu, camera=camera,
@@ -134,6 +165,8 @@ def main():
             except Exception:
                 pass
             mcu.close()
+        if store is not None:
+            store.close()                          # 最後一筆角度寫進檔案
         if sil is not None:
             sil.stop()
 

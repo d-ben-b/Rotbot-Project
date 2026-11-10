@@ -78,7 +78,7 @@ def main():
     from aiohttp import web
 
     from rotbot.actuation.link import SerialMCU
-    from tools.teleop_web import lan_ips
+    from tools.teleop_web import lan_ips, mcu_start_message, open_pose_store
 
     cfg = load_config()
     sil = None
@@ -90,7 +90,8 @@ def main():
         print(f"[MCU] {sil.banner}")
     if not url:
         ap.error("請給 --mcu 或 --sim")
-    mcu = SerialMCU(url).open()
+    store = open_pose_store(cfg, sim=args.sim)
+    mcu = SerialMCU(url, pose_store=store, keep_pose_on_estop=cfg.turret.holds_unpowered).open()
     if sil is not None:
         mcu.zero(0.0, 0.0)
         mcu.aim(15.0, 0.0)
@@ -116,8 +117,7 @@ def main():
     server, runner, shared = build_robot(cfg, mcu, camera, detector, rpm=args.rpm,
                                          calib_path=args.calib, practice=9 if args.sim else 0,
                                          observe_impact=observe, auto_s=args.auto_s, on_log=on_log)
-    if mcu.get_status().homed is False:
-        print("⚠️ MCU 尚未歸零：擺好起始姿態後在網頁按「歸零」再開始")
+    print(mcu_start_message(mcu))
     runner.start()
     print("\n操控頁：http://localhost:%d" % args.port)
     for ip in lan_ips():
@@ -133,6 +133,8 @@ def main():
         except Exception:
             pass
         mcu.close()
+        if store is not None:
+            store.close()                          # 最後一筆角度寫進檔案
         if sil is not None:
             sil.stop()
 

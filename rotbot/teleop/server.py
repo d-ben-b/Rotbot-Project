@@ -14,8 +14,10 @@
   * Deadman：駕駛 deadman_s 沒送輸入 → JOG、車輪歸零；駕駛斷線 → STOP（JOG、飛輪、車輪停）。
     MCU 端車輪另有 DRIVE_TIMEOUT_MS（0.5 s）沒收到 DRIVE 就停。
   * MCU 自己還有看門狗（1 s 沒指令 → 飛輪停），Orin 當掉也安全。
-  * MCU 重開機（SerialMCU.reboots 變了）：用重開機前的角度自動補回歸零、重送 AIM 目標與飛輪轉速，
-    網頁顯示警告直到按「重置」。
+  * MCU 失去歸零（SerialMCU.zero_lost 變了）：用之前的角度自動補回歸零。
+    重開機：再重送 AIM 目標與飛輪轉速，網頁顯示警告直到按「重置」。
+    急停（兩軸斷電推不動，field.yaml turret.holds_unpowered）：保留急停前的角度，不用重新歸零。
+  * 按「重置」回待命時轉塔轉回 (0°, 0°)：每次關機時停在同一個位置。
 """
 from __future__ import annotations
 
@@ -155,7 +157,7 @@ class TeleopServer:
         self.last_error = ""
         self.last_nak = None                # 最近一次 NAK 的錯誤碼（None = 不是 NAK）
         self.mcu_warning = ""
-        self._reboots_seen = 0
+        self._zero_lost_seen = 0
         self.cmd_ms: collections.deque[float] = collections.deque(maxlen=200)
         self.dry_log: collections.deque[tuple] = collections.deque(maxlen=200)
         self._exec = ThreadPoolExecutor(max_workers=1, thread_name_prefix="mcu")   # MCU 呼叫序列化
@@ -304,37 +306,47 @@ class TeleopServer:
         c.notice_t[key] = now
         await self._send(c, dict(t="notice", msg=text))
 
-    # ── MCU 重開機 ───────────────────────────────────
-    async def _check_reboot(self):
-        n = getattr(self.mcu, "reboots", 0)
-        if n == self._reboots_seen:
+    # ── MCU 失去歸零（重開機、急停）────────────────────
+    async def _check_zero_lost(self):
+        n = getattr(self.mcu, "zero_lost", 0)
+        if n == self._zero_lost_seen:
             return
-        self._reboots_seen = n
-        pose = self.mcu.pose_before_reboot
-        head = f"MCU 重開機（第 {n} 次）"
+        self._zero_lost_seen = n
+        why, pose = self.mcu.zero_lost_why, self.mcu.lost_pose
+        reboot = why == "reboot"
+        head = f"MCU 重開機（第 {self.mcu.reboots} 次）" if reboot else "急停"
         if pose is None:
-            msg = f"{head}：重開機前沒有歸零，無法自動補回；回待命、擺好起始姿態後按「歸零」"
+            msg = f"{head}：之前沒有歸零，無法自動補回；回待命、擺好起始姿態後按「歸零」"
         else:
             loop = asyncio.get_running_loop()
             try:                                     # 走同一個執行緒池：補回期間不會插進 JOG
-                got = await loop.run_in_executor(self._exec, self.mcu.restore_after_reboot)
+                got = await loop.run_in_executor(self._exec, self.mcu.restore_zero)
             except Exception as e:
                 got, msg = None, f"{head}：補回歸零失敗（{e}）"
             else:
                 msg = f"{head}：已經重新歸零"
-            if got is not None:
+            if got is not None and reboot:
                 msg = f"{head}：已用重開機前的角度補回歸零（俯仰 {got[0]:.2f}°、水平 {got[1]:.2f}°）"
                 if pose[2]:
                     msg += "；當時轉塔在轉，角度可能有誤差"
-        self.mcu_warning = msg
+            elif got is not None:
+                msg = f"{head}：轉塔斷電推不動，保留急停前的角度（俯仰 {got[0]:.2f}°、水平 {got[1]:.2f}°），不用重新歸零"
+        if reboot:
+            self.mcu_warning = msg                   # 重開機要查原因（電源、USB 線）：警告留到按「重置」
         self._log(msg)
         for c in list(self.clients):
             await self._notice(c, msg)
 
+    async def _park(self):
+        """回待命時轉塔轉回 (0°, 0°)：每次關機時停在同一個位置（角度另有存檔）。"""
+        s = getattr(self.mcu, "status", None)
+        if s is not None and s.homed and not s.estop:
+            await self._mcu("aim", 0.0, 0.0)
+
     # ── 背景工作 ─────────────────────────────────────
     async def _broadcaster(self):
         while True:
-            await self._check_reboot()
+            await self._check_zero_lost()
             st = self.sm.update()
             if st != self._prev_state:                       # 進入急停/結束/交還 AI → 停手動動作
                 if st in (GameState.ESTOP, GameState.FINISHED, GameState.AUTONOMOUS) \
@@ -463,6 +475,7 @@ class TeleopServer:
         elif name == "reset":
             self.sm.reset()
             self.last_error = self.mcu_warning = ""
+            await self._park()
         elif name == "stop":
             await self._safe_stop(f"#{c.id} 按 STOP")
         elif name == "zero":

@@ -181,7 +181,7 @@ v0 逐發抖動 ≤ 0.1 m/s；練習→比賽轉速漂移 < 1%（否則需要比
 | 預估落點的準度 | 依 v0 / Cd / 安裝偏差的猜測值：模擬中沒校正時差約 20 cm，帶入練習 9 球的校正後 ≤ 6 cm | 打牆擬合（`fit_ballistics`）+ 練習校正檔；實機用牆上膠帶驗證（docs/00_verify.md D 節） |
 | 相機外參 `camera_mount` | 假設同軸、對齊；畫面上的預估落點標記位置依賴它（1° ≈ 畫面 31 px） | 硬體組量相機相對槍管的位置與角度 |
 | Jetson 執行環境 | 機上有 numpy 1.21 / OpenCV 4.8 / pytest 6.2.5；沒有 ultralytics、torch、pybullet、模型權重。10/31 起用 `requirements-jetson.txt` + `ultralytics --no-deps`，在 Windows 用相同版本組合模擬過可推論。11/06 用 JetPack 內建的 TensorRT（`trtexec`）實測模型本身：FP16 960×960 約 122 次/秒、latency 平均 8.95 ms；4S 電池與變壓器供電差 ≤ 0.2%，300 s 不降頻、不重開機（續 7） | 照 docs/00_todo.md 第 6 步建環境、跑檢查指令（確認 NVIDIA 的 PyTorch 能配 numpy 1.21）、把權重搬上去 |
-| MCU 比賽中重開機 | 自動補回歸零並重送 AIM / 飛輪（模擬：重開機到下一球 1.06–1.31 s，正常 1.12 s）。重開機時轉塔在轉的話，補回的角度最多差 6°（俯仰）/ 9°（水平）；模擬中 AI 不受影響，手動的預估落點會跟著偏 | 實機按板上 RESET 驗證（docs/00_verify.md C 節）；查明重開機原因（電源、USB 線） |
+| MCU 比賽中重開機 | 自動補回歸零並重送 AIM / 飛輪（模擬：重開機到下一球 1.06–1.31 s，正常 1.12 s）。重開機時轉塔在轉的話，補回的角度最多差 6°（俯仰）/ 9°（水平）；模擬中 AI 不受影響，手動的預估落點會跟著偏。11/10 起整台斷電再開、急停也用存檔的角度自動補回（`turret.holds_unpowered`，前提是兩軸斷電推不動） | 實機按板上 RESET 驗證（docs/00_verify.md C 節）；查明重開機原因（電源、USB 線）；兩軸斷電推不動、開關機 10 次不跑位要實測（docs/00_todo.md 第 6 步） |
 | 車輪（BTS7960 + 四顆編碼器馬達） | 11/03 韌體、協定（`DRIVE` / `WHL`）、操控台開車都做好；韌體模擬器測試通過，G474RE 編譯通過。11/06 實機（車架高、筆電 `wheel_check`）：四輪 PWM 都會轉；編碼器改 5 V + 20 kΩ 分壓後讀得到；車頭定為底盤綠色箭頭方向，四輪對應、轉向、rpm 正負都確認（續 9–12） | Orin + Wi-Fi + 手把開車：先架高看四輪轉向，再放地上測前進、平移、原地轉 |
 | 搖桿（比賽唯一的遙控器） | 對應已寫好（左搖桿開車、右搖桿瞄準、RT 飛輪、A 發射、B 停止），伺服器端有測試；**還沒用實體手把測過**。手把上沒有「切手動」、轉速 ±100、軟體急停，目前只能用滑鼠或鍵盤 | 照 docs/00_verify.md B 節第 6 步測；確認規則是否允許比賽中用滑鼠按「切手動」，不允許就把這幾項加到手把 |
 | 摩擦輪、推彈、彈倉 | 摩擦輪 ×2、推彈各用一片 BTS7960 單向（RPWM ← D5/D6/D9），現有韌體就能控制。⚠️ 摩擦輪沒有編碼器 → 轉速開迴路，建議接 A2 電池分壓做電壓補償。彈倉 6 顆 N20 + TB6612 × 3 + 微動開關，腳位已排（12 支），**韌體還沒寫**；腳位只剩 PC13、PA15 | 彈倉動作順序（一格放幾顆、何時轉）；N20 電壓版本與堵轉電流 |
@@ -209,6 +209,24 @@ v0 逐發抖動 ≤ 0.1 m/s；練習→比賽轉速漂移 < 1%（否則需要比
 
 > **append-only**：每次更新只**新增**條目、不改舊條目，保留數字與決策的演進供工作日誌追蹤。
 > 上方 §0–§8 為「最新快照」；本區為「歷史紀錄」。新到舊排列。
+
+### 2026-11-10（續）：轉塔角度存檔——開機與急停後自動補回歸零，不必每次手動歸零
+
+- 起因：硬體組回報水平軸斷電後推不動，使用者推測俯仰（HBT5776C）也推不動。這樣關機前的角度就是下次開機的角度，使用者同意改成存檔。
+- 修改：
+  - 新增 `rotbot/actuation/pose_store.py` 的 `PoseStore`：背景執行緒寫 JSON（暫存檔 → fsync → `os.replace`，POSIX 再 fsync 資料夾），最多每 0.2 s 一次，只寫最新值；轉動中存的標 `moving`。不在讀 MCU 回覆的執行緒寫檔，避免 fsync 延遲讓指令逾時。
+  - `SerialMCU`：新參數 `pose_store`、`keep_pose_on_estop`。
+    - 每筆已歸零的狀態交給存檔。
+    - `open()` 時 MCU 沒歸零就用存檔補回（`restored_at_open`）；補回失敗只記下原因，留給操作手手動歸零。
+    - 急停時（`keep_pose_on_estop`）不再丟掉角度：記為一次失去歸零（`zero_lost`、`zero_lost_why = "estop"`），不算重開機。
+    - `restore_after_reboot()` 改名 `restore_zero()`（舊名保留）：重開機與開機時 ZERO = 之前的角度 + 之後被 JOG 轉過的步數；急停時 MCU 步數沒變，ZERO = 目前步數，也不重送 AIM、飛輪（急停中會被拒）。
+  - `TeleopServer`：改看 `zero_lost`。重開機的處理和訊息不變；急停時自動補回並通知「保留急停前的角度」，不留警告。按「重置」時轉塔轉回 (0°, 0°)。
+  - `field.yaml` 新增 `turret`（`holds_unpowered: true`、`pose_file: runs/turret_pose.json`），型別 `TurretConfig`。`robot_main`、`teleop_web` 依它開存檔（韌體模擬器不讀寫存檔），開機時印出歸零狀態，結束時寫完最後一筆。
+  - 文件：`docs/00_todo.md` 第 6 步改寫歸零（只有第一次要手動）並加兩項實機檢查（斷電推兩軸、開關機 10 次看對齊線）；`camera_yolo_risks.md` C1 同步。
+- 驗證：
+  - 韌體模擬器，連續 7 次重開新的模擬器（MCU 步數從 0 開始）用存檔補回：每次都是俯仰 19.99°、水平 7.49°，沒有累積誤差。目標 20.00°、7.50° 和讀回值的差來自步數量化；韌體的 `to_steps`、`to_cdeg` 都四捨五入，0.01° 比一步（俯仰 0.0375°、水平 0.0225°）細，所以來回換算不會跑掉。
+  - 新增 `test_pose_store.py`（4 項）、`test_estop_keeps_pose_when_turret_holds_unpowered`、`test_power_cycle_restores_zero_from_saved_pose`、`test_estop_keeps_zero_when_turret_holds`（後兩項 full 與 basic 韌體各跑一次）、`test_teleop_keeps_zero_through_estop_and_parks_on_reset`。全套 **126 passed、2 skipped**。
+- 沒驗證：實機兩軸斷電是否真的推不動、重新上電會不會跳位；HBT5776C 開機時會不會先動一下找相位。
 
 ### 2026-11-10：俯仰馬達確認是 HBT5776C；MCU 剩下的腳位（只改文件）
 

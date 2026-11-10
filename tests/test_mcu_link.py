@@ -97,6 +97,62 @@ def test_reboot_detected_and_zero_restored(sil):
         assert st.rpm_target == 1800                        # 飛輪轉速也重送了
 
 
+def test_power_cycle_restores_zero_from_saved_pose(sil, tmp_path):
+    """整台斷電再開（新的模擬器 = MCU 步數從 0 開始）：open() 用存檔的角度自動歸零，不必手動按「歸零」。"""
+    import time
+
+    from rotbot.actuation.link import SerialMCU
+    from rotbot.actuation.pose_store import PoseStore
+    store = PoseStore(tmp_path / "turret_pose.json")
+    try:
+        with SilProcess(sil.variant) as first:
+            with SerialMCU(first.url, pose_store=store) as mcu:
+                assert mcu.restored_at_open is None and not mcu.get_status().homed   # 沒有存檔：等手動歸零
+                mcu.zero(0, 0)
+                mcu.aim(12.0, -5.0)
+                _settle(mcu, 12.0, -5.0)
+                time.sleep(0.25)                            # 背景輪詢記下停好的角度
+        assert store.flush()
+        saved = store.load()
+        assert saved[:2] == pytest.approx((12.0, -5.0), abs=0.02) and saved[2] is False
+        with SilProcess(sil.variant) as second:
+            with SerialMCU(second.url, pose_store=store) as mcu:
+                assert mcu.restored_at_open[:2] == pytest.approx((12.0, -5.0), abs=0.02)
+                st = mcu.get_status()
+                assert st.homed and (st.pitch_deg, st.yaw_deg) == pytest.approx((12.0, -5.0), abs=0.02)
+                mcu.aim(0.0, 0.0)                           # 不必再歸零就能轉
+                _settle(mcu, 0.0, 0.0)
+    finally:
+        store.close()
+
+
+def test_estop_keeps_zero_when_turret_holds(sil):
+    """兩軸斷電推不動時急停：MCU 清掉「已歸零」但步數沒變 → restore_zero() 用目前步數補回，放開後直接能轉。"""
+    import time
+
+    from rotbot.actuation.link import SerialMCU
+    with SerialMCU(sil.url, keep_pose_on_estop=True) as mcu:
+        mcu.zero(0, 0)
+        mcu.aim(12.0, -5.0)
+        _settle(mcu, 12.0, -5.0)
+        time.sleep(0.25)
+        mcu.write_raw(b"!ESTOP 1\n")
+        end = time.monotonic() + 2.0
+        while mcu.zero_lost == 0 and time.monotonic() < end:
+            time.sleep(0.02)
+        assert mcu.zero_lost == 1 and mcu.zero_lost_why == "estop" and mcu.reboots == 0
+        assert mcu.lost_pose[:2] == pytest.approx((12.0, -5.0), abs=0.02)
+        assert mcu.restore_zero() == pytest.approx((12.0, -5.0), abs=0.02)
+        st = mcu.get_status()
+        assert st.homed and st.estop
+        mcu.write_raw(b"!ESTOP 0\n")
+        end = time.monotonic() + 2.0
+        while mcu.get_status().estop and time.monotonic() < end:
+            time.sleep(0.02)
+        mcu.aim(10.0, 0.0)
+        _settle(mcu, 10.0, 0.0)
+
+
 def test_drive_full_scaled_to_wheel_max(sil):
     """DRIVE ±1000 縮放成 WHEEL_MAX_PERMILLE（714）：12 V 馬達接 4S 時全速約 12 V。模擬器全速 160 rpm → 約 114。"""
     import time

@@ -173,6 +173,13 @@ class ChassisConfig:
 
 
 @dataclass(frozen=True)
+class TurretConfig:
+    """轉塔角度存檔：兩軸斷電後推不動時，Orin 存最後的角度，開機與急停後自動補回歸零。"""
+    holds_unpowered: bool = True                 # 實測斷電推得動就改 False（回到每次手動歸零）
+    pose_file: str = "runs/turret_pose.json"     # 相對 repo 根目錄
+
+
+@dataclass(frozen=True)
 class SimConfig:
     dt: float
     seed: int
@@ -195,6 +202,7 @@ class Config:
     camera_calib: CameraCalibration | None = None    # 沒有 = 實機相機尚未標定
     chassis: ChassisConfig = ChassisConfig()
     lit_check: LitCheckConfig = LitCheckConfig()
+    turret: TurretConfig = TurretConfig()
 
     @property
     def k_drag(self) -> float:
@@ -256,4 +264,5 @@ def load_config(path: str | Path | None = None) -> Config:
         camera_calib=CameraCalibration(**raw["camera_calib"]) if raw.get("camera_calib") else None,
         chassis=ChassisConfig(**raw.get("chassis", {})),
         lit_check=LitCheckConfig(**raw.get("lit_check", {})),
+        turret=TurretConfig(**raw.get("turret", {})),
     )
