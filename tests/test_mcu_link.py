@@ -189,7 +189,15 @@ def test_encoder_raw_debug(sil):
 
     from rotbot.actuation.link import SerialMCU
     with SerialMCU(sil.url) as mcu:
+        mcu.stop()
         raw0, _ = mcu.encoder_raw()
+        end = time.monotonic() + 3.0
+        while time.monotonic() < end:                       # 前一項測試的輪子可能還在慢慢停（全套一起跑時偶爾發生）
+            time.sleep(0.1)
+            again, _ = mcu.encoder_raw()
+            if again == raw0:
+                break
+            raw0 = again
         seen = set()
         for _ in range(6):
             mcu.drive(0.3, 0, 0, 0)

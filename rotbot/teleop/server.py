@@ -18,6 +18,8 @@
     重開機：再重送 AIM 目標與飛輪轉速，網頁顯示警告直到按「重置」。
     急停（兩軸斷電推不動，field.yaml turret.holds_unpowered）：保留急停前的角度，不用重新歸零。
   * 按「重置」回待命時轉塔轉回 (0°, 0°)：每次關機時停在同一個位置。
+  * 救援卡：比賽中按實體急停（MCU 回報急停）網頁跟著進入急停；放開後按「繼續比賽」，
+    計時、球數、校正都沿用（60 秒內回 AI 自主，之後回到急停前的模式）。急停時也能按「歸零」。
 """
 from __future__ import annotations
 
@@ -188,7 +190,7 @@ class TeleopServer:
             return ""
         why = []
         if not s.homed:
-            why.append("還沒歸零（按「重置」回待命，再按「歸零」）")
+            why.append("還沒歸零（待命或急停時按「歸零」）")
         if s.estop:
             why.append("急停中")
         if s.wdog:
@@ -225,7 +227,7 @@ class TeleopServer:
         return dict(
             t="state", game=st.value, game_label=GAME_LABEL[st.value],
             elapsed=round(self.sm.elapsed, 2), remaining=round(self.sm.remaining, 2),
-            auto_locked=self.sm.autonomous_locked,
+            auto_locked=self.sm.autonomous_locked, can_resume=self.sm.can_resume,
             lock_left=round(max(0.0, self.sm.auto_s - self.sm.elapsed), 1) if self.sm.t_start else None,
             role=client.role if client else None, has_driver=self.driver is not None,
             viewers=len(self.clients), mcu_connected=self.mcu is not None, mcu=mcu,
@@ -337,6 +339,44 @@ class TeleopServer:
         for c in list(self.clients):
             await self._notice(c, msg)
 
+    def _resume_blocker(self) -> str:
+        """「繼續比賽」前的檢查；回傳不能繼續的原因，空字串 = 可以。"""
+        if not self.sm.can_resume:
+            return "只有比賽中急停後能繼續；開賽前請按「重置」再「開始」"
+        s = getattr(self.mcu, "status", None)
+        if s is not None and s.estop:
+            return "實體急停還按著，先放開"
+        if s is not None and not s.homed:
+            return "MCU 還沒歸零：擺好起始姿態後按「歸零」"
+        return ""
+
+    async def _resume(self, c: _Client):
+        """救援卡處理完：沿用原本的計時、球數和校正，回到比賽（不必重置再開始）。"""
+        why = self._resume_blocker()
+        if why:
+            await self._notice(c, f"不能繼續比賽：{why}")
+            return
+        st = self.sm.resume()
+        if self.ai is not None:
+            self.ai.note_chassis_moved()               # 救援時拉回起始框：AI 上一次看到的網板位置作廢
+        c.last_input = time.monotonic()
+        msg = f"繼續比賽：{GAME_LABEL[st.value]}，計時沒有重設（已過 {self.sm.elapsed:.0f} s）"
+        if st == GameState.AUTONOMOUS and self.sm.autonomous_locked:
+            msg += "；60 秒內只能 AI"
+        self._log(msg)
+        await self._notice(c, msg)
+
+    async def _check_hw_estop(self):
+        """比賽中按了實體急停（MCU 回報急停）：網頁跟著進入急停，AI 停止下指令；放開後按「繼續比賽」。"""
+        s = getattr(self.mcu, "status", None)
+        if s is None or not s.estop or self.sm.update() not in (GameState.AUTONOMOUS, GameState.MANUAL):
+            return
+        self.sm.estop()
+        await self._safe_stop("實體急停")
+        msg = "實體急停：比賽時間照算。處理完放開急停，按「繼續比賽」"
+        for c in list(self.clients):
+            await self._notice(c, msg)
+
     async def _park(self):
         """回待命時轉塔轉回 (0°, 0°)：每次關機時停在同一個位置（角度另有存檔）。"""
         s = getattr(self.mcu, "status", None)
@@ -347,6 +387,7 @@ class TeleopServer:
     async def _broadcaster(self):
         while True:
             await self._check_zero_lost()
+            await self._check_hw_estop()
             st = self.sm.update()
             if st != self._prev_state:                       # 進入急停/結束/交還 AI → 停手動動作
                 if st in (GameState.ESTOP, GameState.FINISHED, GameState.AUTONOMOUS) \
@@ -472,6 +513,8 @@ class TeleopServer:
                 await self._notice(c, f"不能交還 AI：{why}。先維持手動，看右下角小地圖瞄準")
             elif self.sm.request_auto():
                 await self._safe_stop("交還 AI")
+        elif name == "resume":
+            await self._resume(c)
         elif name == "reset":
             self.sm.reset()
             self.last_error = self.mcu_warning = ""
@@ -479,8 +522,8 @@ class TeleopServer:
         elif name == "stop":
             await self._safe_stop(f"#{c.id} 按 STOP")
         elif name == "zero":
-            if self.sm.state != GameState.IDLE:
-                await self._notice(c, "只能在待命時歸零（擺好起始姿態後按）")
+            if self.sm.state not in (GameState.IDLE, GameState.ESTOP):
+                await self._notice(c, "只能在待命或急停時歸零（擺好起始姿態後按）")
             elif await self._mcu("zero", 0.0, 0.0):
                 await self._notice(c, "已把目前姿態設為 (0°, 0°)")
         else:

@@ -4,7 +4,9 @@
 規則依據（2026_rule-1.pdf 上/下半場）：
   * 比賽開始前 60 秒須「AI 自主控制」；可用遙控器啟動，但啟動後不得再用任何遙控器/設備操控。
   * 第 61 秒起可選擇繼續自主或切換無線遠端操控。每場 3 分鐘。
+  * 救援卡：按急停、拉回起始框調整，比賽時間不暫停；調整完若還在 60 秒內只能 AI，之後可選 AI 或遙控。
 → 本狀態機保證：AUTONOMOUS 期間任何手動輸入都被拒絕；60 秒到才允許切 MANUAL；180 秒到 FINISHED。
+  急停後 resume()（網頁「繼續比賽」）沿用原本的開始時間；reset() 才會把計時歸零。
 時間來源可注入（測試用假時鐘）。
 """
 from __future__ import annotations
@@ -26,6 +28,7 @@ class MatchStateMachine:
         self.auto_s, self.match_s, self.clock = auto_s, match_s, clock
         self.state = GameState.IDLE
         self.t_start: float | None = None
+        self.before_estop = GameState.IDLE   # 急停前的狀態：resume() 在 60 秒後回到它
         self.log: list[tuple[float, str]] = []
 
     # ── 查詢 ─────────────────────────────────────────
@@ -86,7 +89,27 @@ class MatchStateMachine:
         return True
 
     def estop(self) -> None:
+        if self.update() != GameState.ESTOP:
+            self.before_estop = self.state
         self._go(GameState.ESTOP, "急停")
+
+    @property
+    def can_resume(self) -> bool:
+        """比賽中急停過（不是開賽前）才能繼續比賽。"""
+        return self.state == GameState.ESTOP and self.t_start is not None
+
+    def resume(self) -> GameState | None:
+        """急停後繼續比賽（救援卡）：計時不重設，回傳新狀態；不能繼續時回 None。
+
+        60 秒內只能回 AI 自主（規則）；60 秒後回到急停前的模式；比賽時間已到就結束。
+        """
+        if not self.can_resume:
+            return None
+        if self.elapsed >= self.match_s:
+            return self._go(GameState.FINISHED, "比賽時間到")
+        if self.autonomous_locked or self.before_estop not in (GameState.AUTONOMOUS, GameState.MANUAL):
+            return self._go(GameState.AUTONOMOUS, "救援後繼續比賽（AI 自主）")
+        return self._go(self.before_estop, "救援後繼續比賽")
 
     def reset(self) -> None:
         """急停解除 / 賽後：回待命、計時歸零（重新開賽需再 start）。"""

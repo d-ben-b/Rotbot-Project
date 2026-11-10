@@ -390,3 +390,95 @@ def test_chassis_mix_options():
     inv = TeleopServer(chassis=ChassisConfig(strafe_invert=True))
     assert inv.mix(0, 1, 0) == (-1, 1, 1, -1)
     assert TeleopServer().mix(1, 1, 1) == (1, 1 / 3, -1 / 3, 1 / 3)
+
+
+def test_teleop_resume_after_estop_keeps_clock():
+    """急停後可以「歸零」和「繼續比賽」：計時不重設、AI 的網板位置作廢；實體急停還按著時不能繼續。"""
+    from rotbot.actuation import protocol as P
+    from rotbot.actuation.protocol import Status
+
+    class StatusMCU(FakeMCU):
+        def __init__(self):
+            super().__init__()
+            self.status = Status(P.F_HOMED, 12.0, -5.0, -1, 0, 0, 0, 0)
+
+    class FakeAI:
+        moved = 0
+
+        def warning(self):
+            return ""
+
+        def note_chassis_moved(self):
+            self.moved += 1
+
+    async def scenario():
+        mcu, ai = StatusMCU(), FakeAI()
+        server = TeleopServer(mcu=mcu, camera=None, sm=MatchStateMachine(auto_s=0.2, match_s=30), ai=ai)
+        runner, port = await _serve(server)
+        try:
+            async with aiohttp.ClientSession() as s:
+                ws = await s.ws_connect(f"http://127.0.0.1:{port}/ws")
+                await ws.send_json({"t": "cmd", "name": "start"})
+                await asyncio.sleep(0.3)
+                await ws.send_json({"t": "cmd", "name": "manual"})
+                await _wait(ws, lambda m: m["t"] == "state" and m["game"] == "MANUAL")
+                await ws.send_json({"t": "cmd", "name": "estop"})
+                m = await _wait(ws, lambda m: m["t"] == "state" and m["game"] == "ESTOP")
+                assert m["can_resume"]
+                await ws.send_json({"t": "cmd", "name": "zero"})       # 急停時也能歸零
+                await _wait(ws, lambda m: m["t"] == "notice" and "已把目前姿態設為" in m["msg"])
+                assert ("zero", 0.0, 0.0) in mcu.calls
+                mcu.status = Status(P.F_HOMED | P.F_ESTOP, 0.0, 0.0, -1, 0, 0, 0, 0)
+                await ws.send_json({"t": "cmd", "name": "resume"})
+                n = await _wait(ws, lambda m: m["t"] == "notice" and "不能繼續比賽" in m["msg"])
+                assert "實體急停還按著" in n["msg"]
+                mcu.status = Status(P.F_HOMED, 0.0, 0.0, -1, 0, 0, 0, 0)
+                await ws.send_json({"t": "cmd", "name": "resume"})
+                n = await _wait(ws, lambda m: m["t"] == "notice" and m["msg"].startswith("繼續比賽"))
+                assert "手動操控" in n["msg"] and "計時沒有重設" in n["msg"]
+                m = await _wait(ws, lambda m: m["t"] == "state")
+                assert m["game"] == "MANUAL" and m["elapsed"] > 0.3 and not m["can_resume"]
+                assert ai.moved == 1                                    # 救援時拉回起始框
+                await ws.close()
+        finally:
+            await runner.cleanup()
+
+    asyncio.run(scenario())
+
+
+def test_teleop_follows_hardware_estop():
+    """比賽中按實體急停（韌體回報急停）：網頁跟著進入急停；放開後按「繼續比賽」回到原本的計時。"""
+    from tools.mcu_sil import CompilerNotFound, SilProcess, build
+    try:
+        build("full")
+    except CompilerNotFound as e:
+        pytest.skip(str(e))
+    from rotbot.actuation.link import SerialMCU
+
+    async def scenario(mcu):
+        server = TeleopServer(mcu=mcu, camera=None, sm=MatchStateMachine(auto_s=0.2, match_s=60))
+        runner, port = await _serve(server)
+        try:
+            async with aiohttp.ClientSession() as s:
+                ws = await s.ws_connect(f"http://127.0.0.1:{port}/ws")
+                await ws.send_json({"t": "cmd", "name": "start"})
+                await asyncio.sleep(0.3)
+                await ws.send_json({"t": "cmd", "name": "manual"})
+                await _wait(ws, lambda m: m["t"] == "state" and m["game"] == "MANUAL")
+                mcu.write_raw(b"!ESTOP 1\n")
+                await _wait(ws, lambda m: m["t"] == "notice" and m["msg"].startswith("實體急停"))
+                await _wait(ws, lambda m: m["t"] == "state" and m["game"] == "ESTOP" and m["mcu"]["homed"])
+                mcu.write_raw(b"!ESTOP 0\n")
+                await _wait(ws, lambda m: m["t"] == "state" and not m["mcu"]["estop"])
+                await ws.send_json({"t": "cmd", "name": "resume"})
+                m = await _wait(ws, lambda m: m["t"] == "state" and m["game"] != "ESTOP")
+                assert m["game"] == "MANUAL" and m["elapsed"] > 0.3
+                mcu.aim(10.0, 0.0)                                      # 不用重新歸零就能轉
+                await ws.close()
+        finally:
+            await runner.cleanup()
+
+    with SilProcess("full") as sil:
+        with SerialMCU(sil.url, keep_pose_on_estop=True) as mcu:
+            mcu.zero(0.0, 0.0)
+            asyncio.run(scenario(mcu))

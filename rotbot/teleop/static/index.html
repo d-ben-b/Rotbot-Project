@@ -79,6 +79,7 @@
         <button id="btn-auto" data-cmd="auto">交還 AI</button>
         <button data-cmd="stop">停止 <kbd>X</kbd></button>
         <button data-cmd="zero">歸零</button>
+        <button id="btn-resume" data-cmd="resume">繼續比賽</button>
         <button data-cmd="reset">重置</button>
         <button id="btn-claim">取得控制權</button>
         <button id="btn-estop" data-cmd="estop">軟體急停 <kbd>Esc</kbd>（實體紅色按鈕才會斷電）</button>
@@ -155,6 +156,7 @@ function render(m) {
   $("btn-start").disabled = m.game !== "IDLE";
   $("btn-manual").disabled = !(m.game === "AUTONOMOUS" && !m.auto_locked);
   $("btn-auto").disabled = m.game !== "MANUAL";
+  $("btn-resume").disabled = !m.can_resume;
   $("mrtt").textContent = fmt(m.mcu_rtt_ms, 1); $("cms").textContent = fmt(m.cmd_ms, 1);
   const s = m.mcu;
   if (s) {
