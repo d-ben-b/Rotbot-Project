@@ -59,7 +59,7 @@ class ArduinoHal : public Hal {
   uint16_t enc_last_[4] = {0, 0, 0, 0};
   int32_t enc_acc_[4] = {0, 0, 0, 0};
 #endif
-  bool last_dir_[2] = {true, true};
+  int8_t last_dir_[2] = {-1, -1};   // -1 = 開機後還沒寫過 DIR：第一步一定寫（DIR 腳開機是 LOW，不能假設已經是正方向）
   uint32_t tach_t0_ = 0, vbat_t_ = 0;
   int32_t rpm_ = 0;
   float vbat_ = -1.0f;

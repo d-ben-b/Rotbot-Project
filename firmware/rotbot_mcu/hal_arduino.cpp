@@ -60,9 +60,9 @@ void ArduinoHal::step(uint8_t axis, bool forward) {
   uint8_t sp = pitch ? PIN_PITCH_STEP : PIN_YAW_STEP;
   uint8_t dp = pitch ? PIN_PITCH_DIR : PIN_YAW_DIR;
   bool level = forward ^ (pitch ? PITCH_DIR_INVERT : YAW_DIR_INVERT);
-  if (forward != last_dir_[axis]) {
+  if ((int8_t)forward != last_dir_[axis]) {
     digitalWrite(dp, level ? HIGH : LOW);
-    last_dir_[axis] = forward;
+    last_dir_[axis] = (int8_t)forward;
     delayMicroseconds(DIR_SETUP_US);           // DIR 建立時間
   }
   digitalWrite(sp, HIGH);
