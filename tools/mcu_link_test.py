@@ -244,7 +244,7 @@ class Suite:
     def t_aim(self):
         t0 = time.perf_counter()
         self.link.aim(20.0, -5.0)
-        st = self.wait_status(                      # 容許 0.1°：水平每微步 0.1125°，-5° 只能走到 -4.95°
+        st = self.wait_status(                      # 容許 0.1°：MCU 只能走整數步，回報和指令最多差半個微步
             lambda s: not s.moving
             and abs(s.pitch_deg - 20) < 0.1
             and abs(s.yaw_deg + 5) < 0.1

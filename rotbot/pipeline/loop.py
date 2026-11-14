@@ -116,7 +116,7 @@ class ControlLoop:
     def _move_and_settle(self, pitch: float, yaw: float, timeout: float = 4.0):
         """轉到指定角度並等停穩（不要求飛輪到速）；回傳 MCU 狀態。
 
-        到位容許 0.1°：MCU 只能走整數步，水平直接驅動每微步 0.1125°，回報角度和指令最多差約 0.06°。
+        到位容許 0.1°：MCU 只能走整數步，回報角度和指令最多差半個微步（水平 0.010°、俯仰 0.019°）。
         """
         self.mcu.aim(pitch, yaw)
         deadline = time.monotonic() + timeout

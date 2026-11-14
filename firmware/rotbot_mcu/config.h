@@ -112,7 +112,7 @@
 #define PITCH_STEPS_PER_DEG 26.67f   // 200 步 × 16 微步 × 鏈輪 3:1 / 360°
 #endif
 #ifndef YAW_STEPS_PER_DEG
-#define YAW_STEPS_PER_DEG 8.889f     // 200 步 × 16 微步 / 360°：直接驅動（11/14 實測轉台法蘭裝在馬達軸上，沒有減速）
+#define YAW_STEPS_PER_DEG 48.254f    // 200 步 × 16 微步 × 行星齒輪 38/7 / 360°；太陽 21 齒接馬達、外環 93 齒固定、行星支架輸出 → 減速比 1 + 93/21
 #endif
 #ifndef PITCH_MIN_CDEG
 #define PITCH_MIN_CDEG (-500L)       // 0.01°

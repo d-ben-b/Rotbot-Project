@@ -42,9 +42,9 @@ def test_hal_send_fires_one_ball(sil):
 
 
 def _settle(mcu, pitch, yaw, timeout=3.0):
-    """等轉到位。容許 0.1°：水平每微步 0.1125°，回報角度和指令最多差約 0.06°（同 loop._move_and_settle）。
+    """等轉到位。容許 0.1°，同 loop._move_and_settle：MCU 只能走整數步，回報角度和指令最多差半個微步。
 
-    要求回報值完全相等的測試用水平 −4.5°：每度 8.889 步時剛好 40 步，可以精確表示。
+    要求回報值完全相等的測試用水平 −4.5°：每度 48.254 步時是 217 步，回報四捨五入到 0.01° 仍是 −4.50°。
     """
     import time
     end = time.monotonic() + timeout
