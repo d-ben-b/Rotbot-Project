@@ -42,11 +42,15 @@ def test_hal_send_fires_one_ball(sil):
 
 
 def _settle(mcu, pitch, yaw, timeout=3.0):
+    """等轉到位。容許 0.1°：水平每微步 0.1125°，回報角度和指令最多差約 0.06°（同 loop._move_and_settle）。
+
+    要求回報值完全相等的測試用水平 −4.5°：每度 8.889 步時剛好 40 步，可以精確表示。
+    """
     import time
     end = time.monotonic() + timeout
     while time.monotonic() < end:
         st = mcu.get_status()
-        if not st.moving and abs(st.pitch_deg - pitch) < 0.05 and abs(st.yaw_deg - yaw) < 0.05:
+        if not st.moving and abs(st.pitch_deg - pitch) < 0.1 and abs(st.yaw_deg - yaw) < 0.1:
             return st
         time.sleep(0.02)
     raise AssertionError(f"沒轉到 ({pitch}, {yaw})")
@@ -59,15 +63,15 @@ def test_reboot_detected_and_zero_restored(sil):
     from rotbot.actuation.link import NakError, SerialMCU
     with SerialMCU(sil.url) as mcu:
         mcu.zero(0, 0)
-        mcu.aim(12.0, -5.0)
-        _settle(mcu, 12.0, -5.0)
+        mcu.aim(12.0, -4.5)
+        _settle(mcu, 12.0, -4.5)
         time.sleep(0.25)                                    # 背景輪詢記下停好的角度
         mcu.write_raw(b"!RESET\n")                          # 模擬器重新開機
         end = time.monotonic() + 2.0
         while mcu.reboots == 0 and time.monotonic() < end:
             time.sleep(0.02)
         assert mcu.reboots == 1
-        assert mcu.pose_before_reboot[:2] == pytest.approx((12.0, -5.0), abs=0.02)
+        assert mcu.pose_before_reboot[:2] == pytest.approx((12.0, -4.5), abs=0.02)
         with pytest.raises(NakError) as e:                  # 還沒補回：未歸零，MCU 拒絕 AIM
             mcu.aim(10.0, 0.0)
         assert e.value.code == 7
@@ -76,9 +80,9 @@ def test_reboot_detected_and_zero_restored(sil):
         p, y = mcu.restore_after_reboot()
         st = mcu.get_status()
         assert st.homed and (st.pitch_deg, st.yaw_deg) == pytest.approx((p, y), abs=0.02)
-        assert p == pytest.approx(12.0, abs=0.02) and 2.0 < y + 5.0 < 8.0   # 20°/s × 約 0.3 s
-        mcu.aim(12.0, -5.0)
-        _settle(mcu, 12.0, -5.0)
+        assert p == pytest.approx(12.0, abs=0.02) and 2.0 < y + 4.5 < 8.0   # 20°/s × 約 0.3 s
+        mcu.aim(12.0, -4.5)
+        _settle(mcu, 12.0, -4.5)
         assert mcu.restore_after_reboot() is None           # 已歸零：不再補
         time.sleep(0.25)
         assert mcu.reboots == 1                             # EV BOOT 和狀態變化只算一次
@@ -109,17 +113,17 @@ def test_power_cycle_restores_zero_from_saved_pose(sil, tmp_path):
             with SerialMCU(first.url, pose_store=store) as mcu:
                 assert mcu.restored_at_open is None and not mcu.get_status().homed   # 沒有存檔：等手動歸零
                 mcu.zero(0, 0)
-                mcu.aim(12.0, -5.0)
-                _settle(mcu, 12.0, -5.0)
+                mcu.aim(12.0, -4.5)
+                _settle(mcu, 12.0, -4.5)
                 time.sleep(0.25)                            # 背景輪詢記下停好的角度
         assert store.flush()
         saved = store.load()
-        assert saved[:2] == pytest.approx((12.0, -5.0), abs=0.02) and saved[2] is False
+        assert saved[:2] == pytest.approx((12.0, -4.5), abs=0.02) and saved[2] is False
         with SilProcess(sil.variant) as second:
             with SerialMCU(second.url, pose_store=store) as mcu:
-                assert mcu.restored_at_open[:2] == pytest.approx((12.0, -5.0), abs=0.02)
+                assert mcu.restored_at_open[:2] == pytest.approx((12.0, -4.5), abs=0.02)
                 st = mcu.get_status()
-                assert st.homed and (st.pitch_deg, st.yaw_deg) == pytest.approx((12.0, -5.0), abs=0.02)
+                assert st.homed and (st.pitch_deg, st.yaw_deg) == pytest.approx((12.0, -4.5), abs=0.02)
                 mcu.aim(0.0, 0.0)                           # 不必再歸零就能轉
                 _settle(mcu, 0.0, 0.0)
     finally:
@@ -133,16 +137,16 @@ def test_estop_keeps_zero_when_turret_holds(sil):
     from rotbot.actuation.link import SerialMCU
     with SerialMCU(sil.url, keep_pose_on_estop=True) as mcu:
         mcu.zero(0, 0)
-        mcu.aim(12.0, -5.0)
-        _settle(mcu, 12.0, -5.0)
+        mcu.aim(12.0, -4.5)
+        _settle(mcu, 12.0, -4.5)
         time.sleep(0.25)
         mcu.write_raw(b"!ESTOP 1\n")
         end = time.monotonic() + 2.0
         while mcu.zero_lost == 0 and time.monotonic() < end:
             time.sleep(0.02)
         assert mcu.zero_lost == 1 and mcu.zero_lost_why == "estop" and mcu.reboots == 0
-        assert mcu.lost_pose[:2] == pytest.approx((12.0, -5.0), abs=0.02)
-        assert mcu.restore_zero() == pytest.approx((12.0, -5.0), abs=0.02)
+        assert mcu.lost_pose[:2] == pytest.approx((12.0, -4.5), abs=0.02)
+        assert mcu.restore_zero() == pytest.approx((12.0, -4.5), abs=0.02)
         st = mcu.get_status()
         assert st.homed and st.estop
         mcu.write_raw(b"!ESTOP 0\n")

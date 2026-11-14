@@ -220,9 +220,9 @@ def test_teleop_restores_zero_after_mcu_reboot():
                 await asyncio.sleep(0.3)
                 mcu.write_raw(b"!RESET\n")
                 n = await _wait(ws, lambda m: m["t"] == "notice" and "MCU 重開機" in m["msg"])
-                assert "俯仰 12.00°、水平 -5.00°" in n["msg"], n["msg"]
+                assert "俯仰 12.00°、水平 -4.50°" in n["msg"], n["msg"]
                 st = mcu.get_status()
-                assert st.homed and (st.pitch_deg, st.yaw_deg) == (12.0, -5.0)
+                assert st.homed and (st.pitch_deg, st.yaw_deg) == (12.0, -4.5)
                 assert st.rpm_target == 2400
                 await _wait(ws, lambda m: m["t"] == "state" and m["mcu_warning"] == n["msg"])
                 await ws.send_json({"t": "cmd", "name": "reset"})
@@ -234,10 +234,10 @@ def test_teleop_restores_zero_after_mcu_reboot():
     with SilProcess("full") as sil:
         with SerialMCU(sil.url) as mcu:
             mcu.zero(0.0, 0.0)
-            mcu.aim(12.0, -5.0)
+            mcu.aim(12.0, -4.5)
             for _ in range(200):
                 st = mcu.get_status()
-                if not st.moving and (st.pitch_deg, st.yaw_deg) == (12.0, -5.0):
+                if not st.moving and (st.pitch_deg, st.yaw_deg) == (12.0, -4.5):
                     break
                 time.sleep(0.02)
             asyncio.run(scenario(mcu))
@@ -260,9 +260,9 @@ def test_teleop_keeps_zero_through_estop_and_parks_on_reset():
                 ws = await s.ws_connect(f"http://127.0.0.1:{port}/ws")
                 mcu.write_raw(b"!ESTOP 1\n")
                 n = await _wait(ws, lambda m: m["t"] == "notice" and m["msg"].startswith("急停"))
-                assert "保留急停前的角度（俯仰 12.00°、水平 -5.00°）" in n["msg"], n["msg"]
+                assert "保留急停前的角度（俯仰 12.00°、水平 -4.50°）" in n["msg"], n["msg"]
                 st = mcu.get_status()
-                assert st.homed and (st.pitch_deg, st.yaw_deg) == (12.0, -5.0)
+                assert st.homed and (st.pitch_deg, st.yaw_deg) == (12.0, -4.5)
                 assert server.mcu_warning == ""                # 急停不是故障：不留警告
                 mcu.write_raw(b"!ESTOP 0\n")
                 for _ in range(100):
@@ -283,10 +283,10 @@ def test_teleop_keeps_zero_through_estop_and_parks_on_reset():
     with SilProcess("full") as sil:
         with SerialMCU(sil.url, keep_pose_on_estop=True) as mcu:
             mcu.zero(0.0, 0.0)
-            mcu.aim(12.0, -5.0)
+            mcu.aim(12.0, -4.5)
             for _ in range(200):
                 st = mcu.get_status()
-                if not st.moving and (st.pitch_deg, st.yaw_deg) == (12.0, -5.0):
+                if not st.moving and (st.pitch_deg, st.yaw_deg) == (12.0, -4.5):
                     break
                 time.sleep(0.02)
             asyncio.run(scenario(mcu))
@@ -400,7 +400,7 @@ def test_teleop_resume_after_estop_keeps_clock():
     class StatusMCU(FakeMCU):
         def __init__(self):
             super().__init__()
-            self.status = Status(P.F_HOMED, 12.0, -5.0, -1, 0, 0, 0, 0)
+            self.status = Status(P.F_HOMED, 12.0, -4.5, -1, 0, 0, 0, 0)
 
     class FakeAI:
         moved = 0

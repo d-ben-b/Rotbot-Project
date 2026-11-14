@@ -114,13 +114,16 @@ class ControlLoop:
         return self.sm.elapsed if self.sm is not None and self.sm.t_start else time.monotonic() - self.t0
 
     def _move_and_settle(self, pitch: float, yaw: float, timeout: float = 4.0):
-        """轉到指定角度並等停穩（不要求飛輪到速）；回傳 MCU 狀態。"""
+        """轉到指定角度並等停穩（不要求飛輪到速）；回傳 MCU 狀態。
+
+        到位容許 0.1°：MCU 只能走整數步，水平直接驅動每微步 0.1125°，回報角度和指令最多差約 0.06°。
+        """
         self.mcu.aim(pitch, yaw)
         deadline = time.monotonic() + timeout
         while True:
             st = self.mcu.get_status()
-            if (not st.moving and abs(st.pitch_deg - pitch) < 0.05
-                    and abs(st.yaw_deg - yaw) < 0.05):
+            if (not st.moving and abs(st.pitch_deg - pitch) < 0.1
+                    and abs(st.yaw_deg - yaw) < 0.1):
                 return st
             if time.monotonic() > deadline:
                 raise TimeoutError(f"轉塔 {timeout:.1f} s 內未到 ({pitch:.2f}, {yaw:.2f})")
