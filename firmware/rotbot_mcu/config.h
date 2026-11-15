@@ -109,7 +109,7 @@
 
 // ===== 機構（⚠️ 皆為估計值，待硬體組確認）=====
 #ifndef PITCH_STEPS_PER_DEG
-#define PITCH_STEPS_PER_DEG 26.67f   // 200 步 × 16 微步 × 鏈輪 3:1 / 360°
+#define PITCH_STEPS_PER_DEG 26.67f   // 200 步 × 16 微步 × 皮帶輪 3:1 / 360°；馬達端 20 齒、俯仰軸 60 齒
 #endif
 #ifndef YAW_STEPS_PER_DEG
 #define YAW_STEPS_PER_DEG 48.254f    // 200 步 × 16 微步 × 行星齒輪 38/7 / 360°；太陽 21 齒接馬達、外環 93 齒固定、行星支架輸出 → 減速比 1 + 93/21
