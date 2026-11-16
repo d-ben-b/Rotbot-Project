@@ -162,10 +162,10 @@
 #define FLY_TACH_PPR 1               // 轉速計每轉脈衝數
 #endif
 #ifndef VBAT_ENABLED
-#define VBAT_ENABLED 0               // 1 = 量飛輪電池電壓 → 前饋電壓補償（3S 鋰電滿→空差 ~17%，6m 必要）
+#define VBAT_ENABLED 0               // 1 = 量飛輪電池電壓 → 前饋電壓補償（4S LiPo 滿電 16.8 V、用到 14.0 V 時差 17%，6m 必要）
 #endif
 #ifndef VBAT_DIVIDER
-#define VBAT_DIVIDER 5.7f            // 分壓比 (R1+R2)/R2（例：47k/10k → 3S 滿電 12.6V 變 2.21V，低於 ADC 參考電壓）
+#define VBAT_DIVIDER 5.7f            // 分壓比 (R1+R2)/R2（例：47k/10k：4S 滿電 16.8 V 變 2.95 V，要低於 VBAT_ADC_VREF）
 #endif
 #ifndef VBAT_ADC_VREF
 #if defined(ARDUINO_ARCH_AVR)
