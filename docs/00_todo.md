@@ -398,6 +398,7 @@ Nucleo 有兩種排針：
 | 推彈     | D9 (PC7)  | 接 GND    |
 
 - R_EN、L_EN 也接到 2-2 那條共用 EN 線（CN10 外排第 8 支），VCC 接 3.3 V、GND 接 GND，和車輪一樣。
+- 推彈實際用 TB6612FNG（11/17 使用者確認），不是 BTS7960：PWMA 接 D9，AIN1 接 3.3 V、AIN2 接 GND，STBY 接共用 EN 線（CN10 外排第 8 支），VCC 接 3.3 V，VM 接 12 V 降壓模組（VM 最高 13.5 V，不能直接接 4S），AO1、AO2 接馬達。`FEED_PWM` 用下面表格 TB6612 那一列。
 - 轉的方向反了：對調那顆馬達的 M+、M−。
 - 測摩擦輪（不放球、手和線遠離輪子）：
   1. 低速：`python -m tools.fly_check --port COM5 --rpm 600 --seconds 5`（PWM 約 20%）。
