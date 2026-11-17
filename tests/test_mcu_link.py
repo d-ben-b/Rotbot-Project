@@ -158,7 +158,7 @@ def test_estop_keeps_zero_when_turret_holds(sil):
 
 
 def test_drive_full_scaled_to_wheel_max(sil):
-    """DRIVE ±1000 縮放成 WHEEL_MAX_PERMILLE（714）：12 V 馬達接 4S 時全速約 12 V。模擬器全速 160 rpm → 約 114。"""
+    """DRIVE ±1000 縮放成 WHEEL_MAX_PERMILLE（1000：車輪電源 12 V）。模擬器全速 160 rpm → 約 160。"""
     import time
 
     from rotbot.actuation.link import SerialMCU
@@ -168,7 +168,7 @@ def test_drive_full_scaled_to_wheel_max(sil):
             time.sleep(0.1)
         rpm = mcu.wheels()
         mcu.stop()
-        assert all(100 < r < 125 for r in rpm[:2]) and all(-125 < r < -100 for r in rpm[2:]), rpm
+        assert all(145 < r < 170 for r in rpm[:2]) and all(-170 < r < -145 for r in rpm[2:]), rpm
 
 
 def test_stop_also_stops_wheels(sil):
