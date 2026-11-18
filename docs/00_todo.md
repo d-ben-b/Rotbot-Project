@@ -693,6 +693,34 @@ A1 沒接時 Nucleo 不知道馬達斷電了，會繼續輸出摩擦輪的 PWM�
    - 放開急停後摩擦輪不會自己轉起來。
 9. 拔掉 A1 那條線：網頁「急停」燈要變紅（斷線也算急停）。接回去後燈熄滅。
 
+### 2-7 蓋二樓前要從 Nucleo 拉上去的訊號線（11/18）
+
+Nucleo 在一樓，一樓只有水平（D4、D7、A3）和四個車輪。下表是二樓會用到、要先從 Nucleo 拉上去的訊號線，共 15 條，另外要拉 GND。
+
+| 二樓的東西 | 接到二樓的 | Nucleo 腳位 | 在 Nucleo 哪裡 | 韌體 |
+| --- | --- | --- | --- | --- |
+| 俯仰 STEP | ULN2003 IN1 | D8 (PA9) | Arduino 母座，印 `D8` | 已寫 |
+| 俯仰 DIR | ULN2003 IN2 | D12 (PA6) | Arduino 母座，印 `D12` | 已寫 |
+| 左摩擦輪 | BTS7960 RPWM | D5 (PB4) | Arduino 母座，印 `D5` | 已寫 |
+| 右摩擦輪 | BTS7960 RPWM | D6 (PB10) | Arduino 母座，印 `D6` | 已寫 |
+| 兩片摩擦輪的致能 | 兩片 BTS7960 的 R_EN、L_EN | PB12 | CN10 外排第 8 支（和一樓車輪的 EN 同一支，從這支多拉一條） | 已寫 |
+| 推彈 TT | TB6612 PWMA | D9 (PC7) | Arduino 母座，印 `D9` | 已寫 |
+| 推彈原點開關（之後裝） | 開關 NO | D0 (PC5) | Arduino 母座，印 `D0` | 還沒打開 |
+| 彈倉 N20 1 | TB6612 PWMA | D14 (PB9) | Arduino 母座，印 `D14`（有的板子印 SDA） | 還沒寫 |
+| 彈倉 N20 2 | TB6612 PWMB | D13 (PA5) | Arduino 母座，印 `D13`（板上綠色 LED 也接這支，馬達轉時 LED 會亮） | 還沒寫 |
+| 彈倉 N20 3 | 另一片 TB6612 PWMA | PA11 | CN10 外排第 7 支（就在 PB12 旁邊） | 還沒寫 |
+| 彈倉開關 1 | 開關 NO | D1 (PC4) | Arduino 母座，印 `D1` | 還沒寫 |
+| 彈倉開關 2 | 開關 NO | D2 (PA10) | Arduino 母座，印 `D2` | 還沒寫 |
+| 彈倉開關 3 | 開關 NO | D3 (PB3) | Arduino 母座，印 `D3` | 還沒寫 |
+| 急停感測（急停按鈕在二樓時） | 急停第 2 組 NC 接點 | A1 (PA1) | Arduino 母座，印 `A1` | 已寫（`ESTOP_SENSE_ENABLED` 還是 0） |
+
+- GND：二樓每片板子的邏輯 GND、開關的 COM、急停 NC 的另一端都要接到 Nucleo GND，至少拉 2 條。
+- 3.3 V（BTS7960 VCC，TB6612 VCC、STBY、AIN1、BIN1）和 5 V（ULN2003）也要有，自己決定怎麼拉。
+- ULN2003 放一樓的話，改拉它的 OUT1、OUT2 和 + 腳（5 V）。
+- Orin 放二樓的話，Nucleo 到 Orin 的 USB 線要夠長。
+- 開關線和 GND 線絞在一起走，不要和馬達電源線綁在一起。
+- 拉上去的每條線，兩端都貼標籤，寫上表第 1 欄的名稱。
+
 ## 3. 相機（Jetson 上）
 
 - 已經標定好了：IMX296 + 6 mm 鏡頭，數字在 `configs/field.yaml` 的 `camera_calib`。
