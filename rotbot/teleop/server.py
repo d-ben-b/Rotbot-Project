@@ -589,6 +589,7 @@ class TeleopServer:
                 await self._mcu("flywheel", fly)
         if m.get("fire"):
             if await self._mcu("fire"):
+                self.last_error = ""                               # 頁面每次更新都顯示 last_error：成功後要清掉舊的「不能發射」
                 await self._notice(c, "發射！")
             elif self.last_nak == E_NOT_READY and (why := self._fire_blockers()):
                 self.last_error = f"不能發射：{why}"           # 頁面一直顯示 last_error，換成看得懂的原因

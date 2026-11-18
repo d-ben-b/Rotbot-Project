@@ -31,7 +31,7 @@
 #endif
 #ifndef PIN_FEED_HOME
 #if defined(ARDUINO_ARCH_STM32)
-#define PIN_FEED_HOME PC10    // CN7-1 (PC10) 推球原點開關（INPUT_PULLUP，LOW = 在原點）；A0 給車輪 M3 編碼器
+#define PIN_FEED_HOME 0       // D0 (PC5) 推球原點開關（INPUT_PULLUP，LOW = 在原點）。11/18 從 PC10 移來：PC10 改給轉速計、D0 已拉到二樓
 #else
 #define PIN_FEED_HOME A0      // Uno：A0
 #endif
@@ -43,10 +43,18 @@
 #define PIN_VBAT A2           // A2 (PA4)  飛輪電池電壓（分壓後接入，選用；不可超過 VBAT_ADC_VREF）
 #endif
 #ifndef PIN_TACH_L
-#define PIN_TACH_L 2          // D2 (PA10) 飛輪轉速計（外部中斷，選用）
+#if defined(ARDUINO_ARCH_STM32)
+#define PIN_TACH_L PC10       // CN7 外排第 1 支 (PC10, EXTI10) 左飛輪轉速計（選用）。11/18 從 D2 移來：D2、D3 改給彈倉開關
+#else
+#define PIN_TACH_L 2          // Uno：D2
+#endif
 #endif
 #ifndef PIN_TACH_R
-#define PIN_TACH_R 3          // D3 (PB3)  飛輪轉速計（外部中斷，選用）
+#if defined(ARDUINO_ARCH_STM32)
+#define PIN_TACH_R PC11       // CN7 內排第 1 支 (PC11, EXTI11) 右飛輪轉速計（選用）
+#else
+#define PIN_TACH_R 3          // Uno：D3
+#endif
 #endif
 #ifndef PIN_LED
 #define PIN_LED 13            // D13 (PA5) = 板上綠色 LED LD2
@@ -95,7 +103,7 @@
 #define WHEEL_GEAR 56                  // 減速比 1:56 → 輸出軸每轉 11 × 4 × 56 = 2464 計數
 #endif
 #ifndef WHEEL_MAX_PERMILLE
-#define WHEEL_MAX_PERMILLE 714         // DRIVE ±1000 縮放成 ±這個值：12 V 馬達接 4S（滿電 16.8 V）→ 12 ÷ 16.8 × 1000；電源是 12 V 時改 1000
+#define WHEEL_MAX_PERMILLE 1000        // DRIVE ±1000 縮放成 ±這個值。11/17 車輪電源改成 12 V（= 馬達額定）→ 1000；改回直接接 4S（滿電 16.8 V）時用 714 = 12 ÷ 16.8 × 1000
 #endif
 #ifndef WHEEL_SLEW_PER_S
 #define WHEEL_SLEW_PER_S 2000          // 輸出變化率上限（千分比/秒）：0 → 全速 0.5 s，避免電流突波讓電壓掉
@@ -162,10 +170,10 @@
 #define FLY_TACH_PPR 1               // 轉速計每轉脈衝數
 #endif
 #ifndef VBAT_ENABLED
-#define VBAT_ENABLED 0               // 1 = 量飛輪電池電壓 → 前饋電壓補償（3S 鋰電滿→空差 ~17%，6m 必要）
+#define VBAT_ENABLED 0               // 1 = 量飛輪電池電壓 → 前饋電壓補償（4S LiPo 滿電 16.8 V、用到 14.0 V 時差 17%，6m 必要）
 #endif
 #ifndef VBAT_DIVIDER
-#define VBAT_DIVIDER 5.7f            // 分壓比 (R1+R2)/R2（例：47k/10k → 3S 滿電 12.6V 變 2.21V，低於 ADC 參考電壓）
+#define VBAT_DIVIDER 5.7f            // 分壓比 (R1+R2)/R2（例：47k/10k：4S 滿電 16.8 V 變 2.95 V，要低於 VBAT_ADC_VREF）
 #endif
 #ifndef VBAT_ADC_VREF
 #if defined(ARDUINO_ARCH_AVR)
@@ -190,7 +198,7 @@
 #define FEED_HAS_HOME_SWITCH 0       // 1 = 有原點開關（轉一圈回原點即停）；0 = 固定時間
 #endif
 #ifndef FEED_MS
-#define FEED_MS 400                  // 無開關：推球馬達運轉時間
+#define FEED_MS 250                  // 無開關：推球馬達運轉時間。11/18 使用者要縮短，400 → 250；要剛好一圈：按一次轉 n 圈 → 改成 250 ÷ n
 #endif
 #ifndef FEED_MIN_MS
 #define FEED_MIN_MS 120              // 有開關：至少轉這麼久才認回原點（防抖）
@@ -199,7 +207,7 @@
 #define FEED_TIMEOUT_MS 1500         // 有開關：逾時視為卡彈 → EV FAULT
 #endif
 #ifndef FEED_PWM
-#define FEED_PWM 200
+#define FEED_PWM 85                  // TB6612 VM 12 V → 平均 85 ÷ 255 × 12 ≈ 4.0 V。11/18 實機 127（6 V）使用者覺得太快；推不動就往上調（V ÷ 12 × 255，TT 標 3–7.2 V，單路 6 V 為上限）
 #endif
 
 // ===== 時序 / 安全 =====
