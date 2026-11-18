@@ -190,7 +190,7 @@
 #define FEED_HAS_HOME_SWITCH 0       // 1 = 有原點開關（轉一圈回原點即停）；0 = 固定時間
 #endif
 #ifndef FEED_MS
-#define FEED_MS 400                  // 無開關：推球馬達運轉時間
+#define FEED_MS 250                  // 無開關：推球馬達運轉時間。11/18 使用者要縮短，400 → 250；要剛好一圈：按一次轉 n 圈 → 改成 250 ÷ n
 #endif
 #ifndef FEED_MIN_MS
 #define FEED_MIN_MS 120              // 有開關：至少轉這麼久才認回原點（防抖）
