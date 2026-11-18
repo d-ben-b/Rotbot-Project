@@ -116,8 +116,12 @@ def test_teleop_explains_fire_not_ready():
     from rotbot.actuation.protocol import E_NOT_READY, F_FLY_OK, F_HOMED, Status
 
     class NotReadyMCU(FakeMCU):
+        nak = True
+
         def fire(self):
-            raise NakError("FIRE", E_NOT_READY)
+            if self.nak:
+                raise NakError("FIRE", E_NOT_READY)
+            super().fire()
 
     async def scenario():
         mcu = NotReadyMCU()
@@ -136,6 +140,10 @@ def test_teleop_explains_fire_not_ready():
                     n = await _wait(ws, lambda m: m["t"] == "notice" and "不能發射" in m["msg"])
                     assert want in n["msg"] and "NOT_READY" not in n["msg"], n["msg"]
                     assert want in server.last_error
+                mcu.nak = False                                   # 之後發射成功：舊的「不能發射」要清掉，頁面才不會一直顯示
+                await ws.send_json({"t": "input", "jog": [0, 0], "fly": 900, "fire": True})
+                await _wait(ws, lambda m: m["t"] == "notice" and m["msg"] == "發射！")
+                assert server.last_error == ""
                 await ws.close()
         finally:
             await runner.cleanup()
