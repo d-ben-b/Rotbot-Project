@@ -31,7 +31,7 @@
 #endif
 #ifndef PIN_FEED_HOME
 #if defined(ARDUINO_ARCH_STM32)
-#define PIN_FEED_HOME PC10    // CN7-1 (PC10) 推球原點開關（INPUT_PULLUP，LOW = 在原點）；A0 給車輪 M3 編碼器
+#define PIN_FEED_HOME 0       // D0 (PC5) 推球原點開關（INPUT_PULLUP，LOW = 在原點）。11/18 從 PC10 移來：PC10 改給轉速計、D0 已拉到二樓
 #else
 #define PIN_FEED_HOME A0      // Uno：A0
 #endif
@@ -43,10 +43,18 @@
 #define PIN_VBAT A2           // A2 (PA4)  飛輪電池電壓（分壓後接入，選用；不可超過 VBAT_ADC_VREF）
 #endif
 #ifndef PIN_TACH_L
-#define PIN_TACH_L 2          // D2 (PA10) 飛輪轉速計（外部中斷，選用）
+#if defined(ARDUINO_ARCH_STM32)
+#define PIN_TACH_L PC10       // CN7 外排第 1 支 (PC10, EXTI10) 左飛輪轉速計（選用）。11/18 從 D2 移來：D2、D3 改給彈倉開關
+#else
+#define PIN_TACH_L 2          // Uno：D2
+#endif
 #endif
 #ifndef PIN_TACH_R
-#define PIN_TACH_R 3          // D3 (PB3)  飛輪轉速計（外部中斷，選用）
+#if defined(ARDUINO_ARCH_STM32)
+#define PIN_TACH_R PC11       // CN7 內排第 1 支 (PC11, EXTI11) 右飛輪轉速計（選用）
+#else
+#define PIN_TACH_R 3          // Uno：D3
+#endif
 #endif
 #ifndef PIN_LED
 #define PIN_LED 13            // D13 (PA5) = 板上綠色 LED LD2
