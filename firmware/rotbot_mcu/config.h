@@ -95,7 +95,7 @@
 #define WHEEL_GEAR 56                  // 減速比 1:56 → 輸出軸每轉 11 × 4 × 56 = 2464 計數
 #endif
 #ifndef WHEEL_MAX_PERMILLE
-#define WHEEL_MAX_PERMILLE 714         // DRIVE ±1000 縮放成 ±這個值：12 V 馬達接 4S（滿電 16.8 V）→ 12 ÷ 16.8 × 1000；電源是 12 V 時改 1000
+#define WHEEL_MAX_PERMILLE 1000        // DRIVE ±1000 縮放成 ±這個值。11/17 車輪電源改成 12 V（= 馬達額定）→ 1000；改回直接接 4S（滿電 16.8 V）時用 714 = 12 ÷ 16.8 × 1000
 #endif
 #ifndef WHEEL_SLEW_PER_S
 #define WHEEL_SLEW_PER_S 2000          // 輸出變化率上限（千分比/秒）：0 → 全速 0.5 s，避免電流突波讓電壓掉
@@ -199,7 +199,7 @@
 #define FEED_TIMEOUT_MS 1500         // 有開關：逾時視為卡彈 → EV FAULT
 #endif
 #ifndef FEED_PWM
-#define FEED_PWM 200
+#define FEED_PWM 127                 // TB6612 VM 12 V → 平均 127 ÷ 255 × 12 ≈ 6.0 V（TT 標 3–7.2 V；單路 1.2 A，5 Ω 時 6 V 是上限）。電壓測試後改成 V ÷ 12 × 255
 #endif
 
 // ===== 時序 / 安全 =====
