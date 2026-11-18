@@ -199,7 +199,7 @@
 #define FEED_TIMEOUT_MS 1500         // 有開關：逾時視為卡彈 → EV FAULT
 #endif
 #ifndef FEED_PWM
-#define FEED_PWM 200
+#define FEED_PWM 127                 // TB6612 VM 12 V → 平均 127 ÷ 255 × 12 ≈ 6.0 V（TT 標 3–7.2 V；單路 1.2 A，5 Ω 時 6 V 是上限）。電壓測試後改成 V ÷ 12 × 255
 #endif
 
 // ===== 時序 / 安全 =====
