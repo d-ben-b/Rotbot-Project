@@ -212,6 +212,16 @@ v0 逐發抖動 ≤ 0.1 m/s；練習→比賽轉速漂移 < 1%（否則需要比
 > **append-only**：每次更新只**新增**條目、不改舊條目，保留數字與決策的演進供工作日誌追蹤。
 > 上方 §0–§8 為「最新快照」；本區為「歷史紀錄」。新到舊排列。
 
+### 2026-11-19：本機實際編譯 NUCLEO-G474RE 韌體，兩種設定都通過（驗證，沒改程式）
+
+- 起因：11/18（續 5）改了 `PIN_TACH_L/R`（PC10、PC11）和 `PIN_FEED_HOME`（D0），這些只在 `hal_arduino.cpp` 用到，pytest 的韌體模擬器不會編到；之前只能靠 CI。
+- 做法：下載 arduino-cli 1.1.1（官方 release），用筆電上 Arduino IDE 已裝的 STM32 套件 3.0.0，照 CI 的兩個設定編譯 `firmware/rotbot_mcu`（`--warnings all --clean`）。
+- 結果：
+  - 預設設定：exit 0，程式 35372 位元組（6%），全域變數 2000 位元組（1%）。
+  - 全感測設定（`FLY_HAS_TACH=1`、`FEED_HAS_HOME_SWITCH=1`、`ESTOP_SENSE_ENABLED=1`、`VBAT_ENABLED=1`）：exit 0，全域變數 2024 位元組（1%）。
+  - 兩次都沒有出自 `firmware/rotbot_mcu` 的警告。
+- 另外查了套件的 `variant_NUCLEO_G474RE`：PC10、PC11、D0 = PC5、D1 = PC4、D2 = PA10、D3 = PB3、D9 = PC7、D13 = PA5、D14 = PB9、PA11、PB12、A1 = PA1 都有定義，和 2-7 拉線表一致。
+
 ### 2026-11-18（續 5）：摩擦輪轉速計腳位移到 PC10、PC11；推彈原點開關預設改 D0（韌體，功能未打開）
 
 - 使用者擔心：照目前做法初速偏移會很大。
