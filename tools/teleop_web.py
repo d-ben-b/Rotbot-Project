@@ -113,7 +113,8 @@ def main():
     ap.add_argument("--port", type=int, default=8080)
     ap.add_argument("--auto-s", type=float, default=60.0, help="強制自主秒數（規則 60）")
     ap.add_argument("--match-s", type=float, default=180.0)
-    ap.add_argument("--rpm", type=int, default=2400, help="飛輪預設轉速（6m 設計點）")
+    ap.add_argument("--rpm", type=int, default=960,
+                    help="R 鍵的飛輪預設轉速。11/19 實機 2400 太快，隊上討論改 960；沒有轉速計時只是 PWM 換算（FLY_MAX_RPM 待量測）")
     ap.add_argument("--tls-cert", help="HTTPS 憑證（搖桿需要安全連線）")
     ap.add_argument("--tls-key")
     args = ap.parse_args()
