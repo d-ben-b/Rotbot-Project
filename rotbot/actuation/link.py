@@ -118,6 +118,7 @@ class SerialMCU(ActuatorLink):
         self._last_aim: tuple[float, float] | None = None                  # 最後的 AIM 目標（JOG/STOP 後清掉）
         self._last_fly = 0                                                 # 最後的飛輪指令
         self._reboot_t = -1e9
+        self._estop_ev = False                      # 收到 EV ESTOP,1、還沒被下一筆 ST 處理
         self._opened = False
         self.stats = collections.Counter()
         self.rtt_ms: collections.deque[float] = collections.deque(maxlen=2000)
@@ -216,6 +217,8 @@ class SerialMCU(ActuatorLink):
                 self.booted = True
                 if self._opened:
                     self._note_reboot()
+            elif msg.name == "ESTOP" and msg.arg == 1:
+                self._estop_ev = True
             with self._ev_cond:
                 self._ev_count += 1
                 self._events.append((self._ev_count, msg))
@@ -236,11 +239,13 @@ class SerialMCU(ActuatorLink):
 
     def _track_homed(self, st: Status):
         was_homed = self.status is not None and self.status.homed and self._opened
+        # 急停比輪詢週期（0.1 s）短或接點彈跳時，ST 只看到「未歸零、沒急停」：靠 EV ESTOP 認出來，不當成重開機
+        estop, self._estop_ev = st.estop or self._estop_ev, False
         if st.homed:
             self._homed_pose = (st.pitch_deg, st.yaw_deg, st.moving)
             if self.pose_store is not None:
                 self.pose_store.put(st.pitch_deg, st.yaw_deg, st.moving)
-        elif st.estop:
+        elif estop:
             if not self.keep_pose_on_estop:        # 急停時步進斷電、轉塔可能被推動 → 舊角度不能用
                 self._homed_pose = self.pose_before_reboot = self.lost_pose = None
             elif was_homed:                        # 推不動：步數還是對的，restore_zero() 直接用

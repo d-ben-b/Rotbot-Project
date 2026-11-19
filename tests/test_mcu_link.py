@@ -157,6 +157,29 @@ def test_estop_keeps_zero_when_turret_holds(sil):
         _settle(mcu, 10.0, 0.0)
 
 
+def test_short_estop_is_not_a_reboot(sil):
+    """急停只按 20 ms（比 STAT 輪詢 0.1 s 短，或接點彈跳）：ST 只看到「未歸零、沒急停」，
+    要靠 EV ESTOP 認成急停；當成重開機的話會把角度加倍補回，還會重送飛輪轉速。"""
+    import time
+
+    from rotbot.actuation.link import SerialMCU
+    with SerialMCU(sil.url, keep_pose_on_estop=True) as mcu:
+        mcu.zero(0, 0)
+        mcu.aim(12.0, -4.5)
+        mcu.flywheel(2400)
+        _settle(mcu, 12.0, -4.5)
+        time.sleep(0.25)
+        mcu.write_raw(b"!ESTOP 1\n")
+        time.sleep(0.02)
+        mcu.write_raw(b"!ESTOP 0\n")
+        end = time.monotonic() + 2.0
+        while mcu.zero_lost == 0 and time.monotonic() < end:
+            time.sleep(0.02)
+        assert mcu.zero_lost == 1 and mcu.zero_lost_why == "estop" and mcu.reboots == 0
+        assert mcu.restore_zero() == pytest.approx((12.0, -4.5), abs=0.02)
+        assert mcu.get_status().rpm_target == 0             # 急停後不自動重開飛輪
+
+
 def test_drive_full_scaled_to_wheel_max(sil):
     """DRIVE ±1000 縮放成 WHEEL_MAX_PERMILLE（1000：車輪電源 12 V）。模擬器全速 160 rpm → 約 160。"""
     import time
