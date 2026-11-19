@@ -153,13 +153,13 @@
 #define PITCH_MAX_DPS 60.0f          // 位置模式最高角速度 (deg/s)
 #endif
 #ifndef YAW_MAX_DPS
-#define YAW_MAX_DPS 90.0f
+#define YAW_MAX_DPS 30.0f            // 11/19 實機：90 時「重置」轉回 0° 太快、停的位置不對（推測失步）→ 30；還會失步就再降或把 Vref 調高
 #endif
 #ifndef PITCH_ACCEL_DPS2
 #define PITCH_ACCEL_DPS2 240.0f      // 角加速度 (deg/s^2)
 #endif
 #ifndef YAW_ACCEL_DPS2
-#define YAW_ACCEL_DPS2 360.0f
+#define YAW_ACCEL_DPS2 90.0f         // 11/19：360 → 90，0.33 s 加到 30°/s（JOG 也用這個加速度）
 #endif
 #ifndef JOG_MAX_DPS
 #define JOG_MAX_DPS 60.0f            // 手動速度上限
