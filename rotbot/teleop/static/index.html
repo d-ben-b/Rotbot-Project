@@ -107,11 +107,11 @@
     <div class="panel help" style="margin-top:14px">
       <h2>操作（只在「手動操控」時有效）</h2>
       <table>
-        <tr><td><kbd>W</kbd><kbd>S</kbd></td><td>俯仰 上 / 下</td></tr>
-        <tr><td><kbd>A</kbd><kbd>D</kbd></td><td>水平 左 / 右</td></tr>
+        <tr><td><kbd>W</kbd><kbd>S</kbd></td><td>俯仰 上 / 下（固定 1/4 速）</td></tr>
+        <tr><td><kbd>A</kbd><kbd>D</kbd></td><td>水平 左 / 右（固定 1/4 速）</td></tr>
         <tr><td><kbd>↑</kbd><kbd>↓</kbd> / <kbd>←</kbd><kbd>→</kbd></td><td>車子 前進、後退 / 往左、往右平移</td></tr>
         <tr><td><kbd>&lt;</kbd><kbd>&gt;</kbd></td><td>車子 原地左轉 / 右轉</td></tr>
-        <tr><td><kbd>Shift</kbd></td><td>微調（瞄準和車輪都 1/4 速）</td></tr>
+        <tr><td><kbd>Shift</kbd></td><td>微調：車輪 1/4 速；瞄準再慢 4 倍（W/S/A/D 變 1/16 速）</td></tr>
         <tr><td><kbd>R</kbd></td><td>飛輪 開 / 關（預設轉速）</td></tr>
         <tr><td><kbd>Q</kbd><kbd>E</kbd></td><td>飛輪 −/＋ 100 rpm</td></tr>
         <tr><td><kbd>Space</kbd></td><td>發射（需 READY）</td></tr>
@@ -231,10 +231,11 @@ window.addEventListener("blur", () => keys.clear());       // 切走視窗 → �
 const dz = (v) => Math.abs(v) < 0.12 ? 0 : Math.sign(v) * ((Math.abs(v) - 0.12) / 0.88) ** 2;
 function readInput() {
   let p = 0, y = 0, fwd = 0, side = 0, rot = 0, fine = keys.has("ShiftLeft") || keys.has("ShiftRight");
-  if (keys.has("KeyW")) p += 1;
-  if (keys.has("KeyS")) p -= 1;
-  if (keys.has("KeyD")) y += 1;
-  if (keys.has("KeyA")) y -= 1;
+  const KEY_AIM = 0.25;                                            // 鍵盤瞄準固定 1/4 速（11/19 使用者：不要快的版本）
+  if (keys.has("KeyW")) p += KEY_AIM;
+  if (keys.has("KeyS")) p -= KEY_AIM;
+  if (keys.has("KeyD")) y += KEY_AIM;
+  if (keys.has("KeyA")) y -= KEY_AIM;
   if (keys.has("ArrowUp")) fwd += 1;
   if (keys.has("ArrowDown")) fwd -= 1;
   if (keys.has("ArrowRight")) side += 1;
