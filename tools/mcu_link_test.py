@@ -6,11 +6,11 @@
                           未 ZERO 就 AIM、超出範圍、未就緒就 FIRE、吞吐量
   動作（--allow-motion 或 --sil 才跑）：轉塔到位、飛輪到速、推球、重送去重、JOG/STOP、看門狗
   車輪（--allow-drive 或 --sil 才跑；實機要先把車架高、輪子離地）：逐輪轉、編碼器方向、deadman 停車
-  模擬器專屬（--sil）：急停、電池電壓下降時的轉速閉迴路、推球卡彈
+  模擬器專屬（--sil）：急停、電池電壓下降時的轉速閉迴路
 
 用法：
     python -m tools.mcu_link_test --sil                       # 自動建置+啟動模擬器，全部測試
-    python -m tools.mcu_link_test --sil --variant basic       # 測開迴路飛輪/固定時間推球的韌體變體
+    python -m tools.mcu_link_test --sil --variant basic       # 測開迴路飛輪的韌體變體
     python -m tools.mcu_link_test --port COM5                 # Arduino 接電腦：只跑通訊類
     python -m tools.mcu_link_test --port /dev/ttyACM0 --allow-motion   # Orin + Arduino + 馬達
     python -m tools.mcu_link_test --port COM5 --allow-drive   # 車架高後測四個車輪
@@ -271,7 +271,7 @@ class Suite:
         mark = self.link.event_mark()
         t0 = time.perf_counter()
         self.link.fire()
-        ev = self.link.wait_event("FIRED", timeout=3.0, since=mark)
+        ev = self.link.wait_event("FIRED", timeout=protocol.FIRE_TIMEOUT_S, since=mark)
         shots1 = self.link.get_status().shots
         ok = shots1 == shots0 + 1 and ev.arg == shots1
         return (
@@ -284,8 +284,10 @@ class Suite:
         shots0 = self.link.get_status().shots
         seq = (self.link._seq + 100) % 255 + 1  # 刻意選一個最近沒用過的 SEQ
         line = protocol.encode_line("FIRE", seq)
+        mark = self.link.event_mark()
         self.link.write_raw(line + line)  # 模擬「ACK 遺失 → 同 SEQ 重送」
-        time.sleep(1.6)
+        self.link.wait_event("FIRED", timeout=protocol.FIRE_TIMEOUT_S, since=mark)
+        time.sleep(0.3)
         n_new = self.link.get_status().shots - shots0
         return (
             "PASS" if n_new == 1 else "FAIL"
@@ -355,22 +357,6 @@ class Suite:
             f"；電壓前饋 + PI 補償，未補償會掉到 ~2040 rpm"
         )
 
-    def t_jam(self):
-        self.link.flywheel(2400)
-        self.link.wait_ready(timeout=6.0)
-        self.link.write_raw(b"!JAM 1\n")
-        try:
-            mark = self.link.event_mark()
-            self.link.fire()
-            ev = self.link.wait_event("FAULT", timeout=3.0, since=mark)
-            st = self.link.get_status()
-        finally:
-            self.link.write_raw(b"!JAM 0\n")
-        ok = ev.arg == 1 and not st.firing
-        return (
-            "PASS" if ok else "FAIL"
-        ), "推球卡住 → 逾時 EV FAULT、馬達停（不計球數）"
-
     # ── 主流程 ──────────────────────────────────────
     def run(self) -> list[dict]:
         if self.verbose:
@@ -413,7 +399,6 @@ class Suite:
             T("急停時車輪停", self.t_wheels_estop, sil_only=True)
             T("急停", self.t_estop, sil_only=True)
             T("電池下降時轉速閉迴路", self.t_battery, sil_only=True, variant="full")
-            T("推球卡彈偵測", self.t_jam, sil_only=True, variant="full")
         finally:
             try:
                 self.link.request("STOP")

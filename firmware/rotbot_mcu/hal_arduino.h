@@ -28,14 +28,7 @@ class ArduinoHal : public Hal {
     analogWrite(PIN_FLY_R, pwm);
   }
   int32_t flywheelRpm() override;
-  void setFeeder(uint8_t pwm) override { analogWrite(PIN_FEED, pwm); }
-  bool feederHome() override {
-#if FEED_HAS_HOME_SWITCH
-    return digitalRead(PIN_FEED_HOME) == LOW;
-#else
-    return true;
-#endif
-  }
+  void enableFeeder(bool on) override { writeFeed(on); }
   bool estopActive() override {
 #if ESTOP_SENSE_ENABLED
     return digitalRead(PIN_ESTOP_SENSE) == HIGH;
@@ -54,6 +47,8 @@ class ArduinoHal : public Hal {
 #endif
 
  private:
+  void writeFeed(bool on);
+  uint8_t feed_phase_ = 0;          // 推球目前通電的相（0–3）；斷電後再通電從同一相開始，不會跳步
 #if WHEELS_ENABLED
   void beginWheels();
   uint16_t enc_last_[4] = {0, 0, 0, 0};

@@ -21,6 +21,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from ..actuation.protocol import FIRE_TIMEOUT_S
 from ..config import Config
 from ..decision import frames
 from ..decision.calibration import AdaptiveCalibrator
@@ -311,7 +312,7 @@ class ControlLoop:
         st = self.mcu.get_status()                       # 發射當下的實際角度（給落點回授用）
         mark = self.mcu.event_mark()
         self.mcu.fire()
-        self.mcu.wait_event("FIRED", timeout=3.0, since=mark)
+        self.mcu.wait_event("FIRED", timeout=FIRE_TIMEOUT_S, since=mark)
         t_fired = time.perf_counter()
         self.planner.record(t)
 

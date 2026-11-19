@@ -33,6 +33,7 @@ from dataclasses import dataclass
 from ..hal import AimCommand
 
 PROTO_VERSION = 1
+FIRE_TIMEOUT_S = 10.0         # FIRE → EV FIRED 最多等多久：推彈 28BYJ-48 一圈約 5 s（config.h 的 FEED_STEP_HZ）
 MAX_LINE = 64                 # 含 *CC\n 的最大行長（MCU 端緩衝區大小）
 TERMINATOR = b"\n"
 

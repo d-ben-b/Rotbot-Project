@@ -5,7 +5,7 @@
 //
 // 模擬控制（以 '!' 開頭、不經協定、不回覆）：
 //   !ESTOP 1|0     按下/放開急停      !BATT 0.85   電池電壓係數（飛輪最高轉速 × 係數）
-//   !JAM 1|0       推球卡彈           !RESET       重新開機
+//   !RESET         重新開機
 // 建置：python -m tools.mcu_sil --build（自動找 g++/clang++，沒有就用 pip 的 ziglang）
 #include <stdio.h>
 #include <stdlib.h>
@@ -54,8 +54,7 @@ class SimHal : public Hal {
     return -1;
 #endif
   }
-  void setFeeder(uint8_t pwm) override { feeder_on_ = pwm > 0; }
-  bool feederHome() override { return phase_ < 0.12; }
+  void enableFeeder(bool) override {}
   bool estopActive() override { return estop_; }
   void write(const char* s, size_t n) override { out.append(s, n); }
   float batteryVolts() override {
@@ -88,7 +87,6 @@ class SimHal : public Hal {
     if (dt <= 0) return;
     double target = fly_pwm_ / 255.0 * FLY_MAX_RPM * batt;          // 馬達穩態轉速
     rpm_ += (target - rpm_) * (1.0 - std::exp(-dt / 0.35));        // 一階延遲 τ=0.35 s
-    if (feeder_on_ && !jam) phase_ = std::fmod(phase_ + dt / 0.35, 1.0);   // 0.35 s 轉一圈
     const double cpr = WHEEL_ENC_PPR * 4.0 * WHEEL_GEAR;            // 輸出軸每轉計數
     for (int i = 0; i < 4; ++i) {                                   // 車輪：輸出軸穩態 160 rpm（全速）、τ=0.15 s
       double w = wheels_on_ ? wheel_duty_[i] / 1000.0 * 160.0 * batt : 0.0;
@@ -100,7 +98,7 @@ class SimHal : public Hal {
   double wheel_rpm_[4] = {0, 0, 0, 0};
 
   std::string out;
-  bool estop_ = false, jam = false;
+  bool estop_ = false;
   double batt = 1.0;
   unsigned long steps_ = 0;
 
@@ -112,8 +110,8 @@ class SimHal : public Hal {
   std::chrono::steady_clock::time_point t0_;
   std::mt19937 rng_;
   uint8_t fly_pwm_ = 0;
-  bool steppers_on_ = false, feeder_on_ = false, wheels_on_ = false;
-  double rpm_ = 0, phase_ = 0, last_tick_ = 0;
+  bool steppers_on_ = false, wheels_on_ = false;
+  double rpm_ = 0, last_tick_ = 0;
   int16_t wheel_duty_[4] = {0, 0, 0, 0};
   double wheel_counts_[4] = {0, 0, 0, 0};
 };
@@ -125,7 +123,6 @@ static void handle_sim(SimHal& hal, App& app, const std::string& cmd) {
   if (n < 1) return;
   std::string s(name);
   if (s == "ESTOP") hal.estop_ = v != 0;
-  else if (s == "JAM") hal.jam = v != 0;
   else if (s == "BATT" && n == 2) hal.batt = v;
   else if (s == "RESET") app.begin();
 }
@@ -157,8 +154,8 @@ int main(int argc, char** argv) {
   socklen_t alen = sizeof(addr);                    // --port 0 → 系統配發，印出實際埠號
   getsockname(ls, (sockaddr*)&addr, &alen);
   port = ntohs(addr.sin_port);
-  printf("SIL listening on %s:%d (proto v%u, fw %d, tach %d, home-switch %d, vbat %d)\n", host, port,
-         (unsigned)proto::VERSION, FW_VERSION, FLY_HAS_TACH, FEED_HAS_HOME_SWITCH, VBAT_ENABLED);
+  printf("SIL listening on %s:%d (proto v%u, fw %d, tach %d, vbat %d)\n", host, port,
+         (unsigned)proto::VERSION, FW_VERSION, FLY_HAS_TACH, VBAT_ENABLED);
   fflush(stdout);
 
   SimHal hal;

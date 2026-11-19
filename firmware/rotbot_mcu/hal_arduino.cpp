@@ -34,8 +34,11 @@ void ArduinoHal::begin() {
   pinMode(PIN_STEPPER_EN, OUTPUT);
   pinMode(PIN_FLY_L, OUTPUT);
   pinMode(PIN_FLY_R, OUTPUT);
-  pinMode(PIN_FEED, OUTPUT);
-  pinMode(PIN_FEED_HOME, INPUT_PULLUP);
+  pinMode(PIN_FEED_IN1, OUTPUT);
+  pinMode(PIN_FEED_IN2, OUTPUT);
+  pinMode(PIN_FEED_IN3, OUTPUT);
+  pinMode(PIN_FEED_IN4, OUTPUT);
+  writeFeed(false);
   pinMode(PIN_ESTOP_SENSE, INPUT_PULLUP);
   pinMode(PIN_LED, OUTPUT);
   digitalWrite(PIN_STEPPER_EN, HIGH);         // 先失能，App::begin() 再致能
@@ -45,7 +48,6 @@ void ArduinoHal::begin() {
 #endif
   analogWrite(PIN_FLY_L, 0);
   analogWrite(PIN_FLY_R, 0);
-  analogWrite(PIN_FEED, 0);
 #if FLY_HAS_TACH
   pinMode(PIN_TACH_L, INPUT_PULLUP);
   pinMode(PIN_TACH_R, INPUT_PULLUP);
@@ -55,7 +57,19 @@ void ArduinoHal::begin() {
   tach_t0_ = ::millis();
 }
 
+// 整步、兩相同時通電：相 k 通 IN(k+1)、IN(k+2) → 1100、0110、0011、1001。HIGH = ULN2003 導通 = 線圈通電
+void ArduinoHal::writeFeed(bool on) {
+  static const uint32_t pins[4] = {PIN_FEED_IN1, PIN_FEED_IN2, PIN_FEED_IN3, PIN_FEED_IN4};
+  for (uint8_t i = 0; i < 4; ++i)
+    digitalWrite(pins[i], on && (i == feed_phase_ || i == ((feed_phase_ + 1) & 3)) ? HIGH : LOW);
+}
+
 void ArduinoHal::step(uint8_t axis, bool forward) {
+  if (axis == AXIS_FEED) {
+    feed_phase_ = (uint8_t)((feed_phase_ + (forward ? 1 : 3)) & 3);
+    writeFeed(true);
+    return;
+  }
   bool pitch = axis == AXIS_PITCH;
   uint8_t sp = pitch ? PIN_PITCH_STEP : PIN_YAW_STEP;
   uint8_t dp = pitch ? PIN_PITCH_DIR : PIN_YAW_DIR;

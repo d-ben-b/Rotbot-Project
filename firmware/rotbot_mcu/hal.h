@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-enum Axis : uint8_t { AXIS_PITCH = 0, AXIS_YAW = 1 };
+enum Axis : uint8_t { AXIS_PITCH = 0, AXIS_YAW = 1, AXIS_FEED = 2 };   // FEED = 推球 28BYJ-48
 
 class Hal {
  public:
@@ -14,8 +14,7 @@ class Hal {
   virtual void enableSteppers(bool on) = 0;
   virtual void setFlywheelPwm(uint8_t pwm) = 0;        // 0~255，兩輪同值
   virtual int32_t flywheelRpm() = 0;                   // 量測轉速；沒有轉速計回傳 -1
-  virtual void setFeeder(uint8_t pwm) = 0;             // 推球馬達 0~255
-  virtual bool feederHome() = 0;                       // 推球在原點（沒開關時回傳 true）
+  virtual void enableFeeder(bool on) = 0;              // 推球線圈通電；false = 四相全關（停著時不發熱）
   virtual bool estopActive() = 0;
   virtual void write(const char* s, size_t n) = 0;     // 序列輸出
   virtual float batteryVolts() { return -1.0f; }       // 飛輪電池電壓；沒量測回傳 -1

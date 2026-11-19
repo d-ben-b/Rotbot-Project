@@ -75,11 +75,16 @@ void App::begin() {
                    PITCH_MAX_DPS, PITCH_ACCEL_DPS2);
   yaw_.configure(AXIS_YAW, YAW_STEPS_PER_DEG, YAW_MIN_CDEG, YAW_MAX_CDEG,
                  YAW_MAX_DPS, YAW_ACCEL_DPS2);
+  feed_.configure(AXIS_FEED, FEED_STEPS_PER_REV / 360.0f, 0, 0, 0, 0);
+  feed_.max_steps = 0x7FFFFFFFL;               // 只往前轉，不設上限
+  feed_.max_speed = FEED_STEP_HZ;
+  feed_.accel = FEED_ACCEL;
+  feed_rem_ = 0;
   homed_ = wdog_ = estop_ = was_ready_ = armed_ = false;
   fly_target_ = 0;
   fly_i_ = 0;
   fly_ok_ = false;
-  firing_ = feed_left_home_ = false;
+  firing_ = false;
   shots_ = 0;
   last_err_ = 0;
   crc_errors_ = 0;
@@ -88,7 +93,7 @@ void App::begin() {
   last_req_crc_ = 0;
   last_reply_[0] = '\0';
   hal_.setFlywheelPwm(0);
-  hal_.setFeeder(0);
+  hal_.enableFeeder(false);
   hal_.enableSteppers(true);
   hal_.enableWheels(false);                    // 收到第一個合法幀才致能
   for (uint8_t i = 0; i < 4; ++i) {
@@ -237,9 +242,13 @@ void App::handleLine(char* line) {
     if (firing_) { sendAck(seq, proto::E_BUSY); return; }
     if (!ready()) { sendAck(seq, proto::E_NOT_READY); return; }
     firing_ = true;
-    feed_left_home_ = false;
-    fire_start_ms_ = now;
-    hal_.setFeeder(FEED_PWM);
+    if (feed_.pos == feed_.target) {           // 上一圈被急停打斷時不加：這一發只把那一圈轉完，推塊回到最後面
+      float want = FEED_STEPS_PER_REV + feed_rem_;
+      long n = round_l(want);
+      feed_rem_ = want - (float)n;             // 一圈不是整數步時，推塊不會越停越偏
+      feed_.target += n;
+    }
+    hal_.enableFeeder(true);
     sendAck(seq, proto::E_OK);
   } else if (!strcmp(cmd, "JOG")) {
     if (nargs != 2) { sendAck(seq, proto::E_FORMAT); return; }
@@ -340,26 +349,11 @@ void App::updateFlywheel(uint32_t now, float dt) {
   hal_.setFlywheelPwm((uint8_t)(pwm + 0.5f));
 }
 
-void App::updateFeeder(uint32_t now) {
+void App::updateFeeder(float dt) {
   if (!firing_) return;
-  uint32_t el = now - fire_start_ms_;
-  bool done = false;
-#if FEED_HAS_HOME_SWITCH
-  if (!hal_.feederHome()) feed_left_home_ = true;
-  if (feed_left_home_ && hal_.feederHome() && el >= FEED_MIN_MS) {
-    done = true;
-  } else if (el >= FEED_TIMEOUT_MS) {                  // 卡彈：停馬達、報錯，不計球數
-    hal_.setFeeder(0);
-    firing_ = false;
-    last_err_ = proto::E_BUSY;
-    sendEvent("FAULT", 1);
-    return;
-  }
-#else
-  done = el >= FEED_MS;
-#endif
-  if (done) {
-    hal_.setFeeder(0);
+  feed_.update(hal_, dt);
+  if (!feed_.moving()) {                       // 開迴路：卡住失步也偵測不到，只能數步數
+    hal_.enableFeeder(false);
     firing_ = false;
     ++shots_;
     sendEvent("FIRED", shots_);
@@ -408,7 +402,8 @@ void App::update() {
     if (es) {                                    // 急停：全停、步進失能、需重新 ZERO
       enterSafe();
       firing_ = false;
-      hal_.setFeeder(0);
+      hal_.enableFeeder(false);
+      feed_.speed = feed_.frac = 0;              // target 不動：下一發先把這一圈轉完
       hal_.enableSteppers(false);
       pitch_.speed = yaw_.speed = 0;
       pitch_.target = pitch_.pos;
@@ -434,7 +429,7 @@ void App::update() {
   }
   if (pitch_.moving() || yaw_.moving()) still_since_ms_ = now;
   updateFlywheel(now, dt);
-  updateFeeder(now);
+  updateFeeder(dt);
   updateWheels(now, dt);
   bool r = ready();
   if (r && !was_ready_) sendEvent("READY", shots_);

@@ -445,7 +445,7 @@ class SerialMCU(ActuatorLink):
             self.wait_ready()
             mark = self.event_mark()
             self.fire()
-            ev = self.wait_event("FIRED", timeout=3.0, since=mark)
+            ev = self.wait_event("FIRED", timeout=protocol.FIRE_TIMEOUT_S, since=mark)
             return Ack(ok=True, message=f"fired #{ev.arg}")
         except LinkError as e:
             return Ack(ok=False, message=str(e))

@@ -63,10 +63,10 @@ Jetson Orin (Python)                         NUCLEO-G474RE (C++，STM32duino)
 |---|---|
 | `BOOT` | 開機（Uno 開埠被 DTR 重置 → 約 1.6 s 後；Nucleo 開埠不重置，只有上電或按 RESET 時才有） |
 | `READY` | 進入可發射狀態 |
-| `FIRED` | 推球完成（arg = 累計球數） |
+| `FIRED` | 推球完成：28BYJ-48 轉完一圈（arg = 累計球數） |
 | `WDOG` | 超過 `WDOG_MS`（1 s）沒收到合法指令 → 飛輪停、JOG 停 |
 | `ESTOP` | 急停按下（1）/ 放開（0）；放開後須重新 `ZERO` |
-| `FAULT` | 推球逾時（卡彈）；不計球數 |
+| `FAULT` | 保留（11/19 推彈改成開迴路步進後，韌體不再送；卡住失步偵測不到） |
 
 NAK 錯誤碼：1 FORMAT、2 UNKNOWN、3 RANGE、4 NOT_READY、5 ESTOP、6 BUSY、7 NOT_HOMED。
 STAT 旗標：0x01 READY、0x02 MOVING、0x04 FLY_OK、0x08 FIRING、0x10 ESTOP、0x20 WDOG、0x40 HOMED、0x80 JOGGING。
@@ -86,8 +86,7 @@ STAT 旗標：0x01 READY、0x02 MOVING、0x04 FLY_OK、0x08 FIRING、0x10 ESTOP�
 | D8 (PA9) / D12 (PA6) | 俯仰軸 TMC2209 STEP / DIR |
 | A3 (PB0) | 兩軸 EN（LOW 致能） |
 | D5 (PB4) / D6 (PB10) | 左 / 右飛輪 PWM |
-| D9 (PC7) | 推球（曲柄滑塊）馬達 PWM |
-| CN7-1 (PC10) | 推球原點開關（選用；11/03 前在 A0，A0 改給車輪編碼器） |
+| D9 (PC7)、D0 (PC5)、CN7-4 (PD2)、CN10-30 (PB13) | 推球 28BYJ-48 的 ULN2003 IN1–IN4（11/19 起；之前是 D9 PWM 接 TT） |
 | A1 (PA1) | 急停輔助接點（選用，`ESTOP_SENSE_ENABLED`） |
 | A2 (PA4) | 飛輪電池電壓分壓（選用，`VBAT_ENABLED`；不可超過 `VBAT_ADC_VREF`） |
 | D2 (PA10) / D3 (PB3) | 飛輪轉速計（外部中斷，選用，`FLY_HAS_TACH`） |
@@ -98,8 +97,8 @@ STAT 旗標：0x01 READY、0x02 MOVING、0x04 FLY_OK、0x08 FIRING、0x10 ESTOP�
 > 四片模組的 R_EN/L_EN 共用 PB12（外接 10 kΩ 下拉），收到第一個合法幀才致能、急停時拉低。
 > 摩擦輪沒有編碼器，D2/D3 預計改接彈倉的微動開關；彈倉 6 顆 N20 + TB6612 的腳位見 00_todo.md 第 2-4 步（韌體還沒寫）。
 
-⚠️ 待硬體組確認：`PITCH/YAW_STEPS_PER_DEG`（目前 26.67 / 48.254：200 步 × 16 微步 × 減速比 3 / 38/7；俯仰是皮帶輪 20 → 60 齒，水平是行星齒輪，太陽 21 齒、外環 93 齒）、角度上下限、`FLY_MAX_RPM`、`FEED_MS`、方向是否要反（`*_DIR_INVERT`）。
-6 m 建議配置：**轉速計 + 電池電壓量測 + 推球原點開關**都裝（「full」設定；Uno 資源足夠）。
+⚠️ 待硬體組確認：`PITCH/YAW_STEPS_PER_DEG`（目前 26.67 / 48.254：200 步 × 16 微步 × 減速比 3 / 38/7；俯仰是皮帶輪 20 → 60 齒，水平是行星齒輪，太陽 21 齒、外環 93 齒）、角度上下限、`FLY_MAX_RPM`、`FEED_STEPS_PER_REV`／`FEED_STEP_HZ`、方向是否要反（`*_DIR_INVERT`）。
+6 m 建議配置：**轉速計 + 電池電壓量測**都裝（「full」設定；Uno 資源足夠）。
 
 ## 4. 測試結果（韌體模擬器，2026-10-25）
 
@@ -119,7 +118,6 @@ STAT 旗標：0x01 READY、0x02 MOVING、0x04 FLY_OK、0x08 FIRING、0x10 ESTOP�
 | 看門狗 | 沉默 1000 ms → EV WDOG、飛輪歸 0 ✅ | ✅ |
 | 急停 | NAK ESTOP、放開需重新 ZERO ✅ | ✅ |
 | 電池掉到 85%（10.2 V） | 1.1 s 到速、穩在 2422 rpm（0.9%）✅ | –（無電壓量測：會掉 15%） |
-| 推球卡彈 | 逾時 EV FAULT、馬達停 ✅ | – |
 
 ⚠️ 模擬器的延遲是 TCP 本機迴路，**不代表 USB 序列**。真 Uno（16U2 USB-CDC）一般 1–4 ms；CH340 類似；FTDI 預設 latency_timer 16 ms（見 §6）。工具對實機的門檻是 p95 < 20 ms。
 

@@ -16,7 +16,7 @@
 - Arduino IDE：裝 STM32duino 核心（STM32 MCU based boards），開 `rotbot_mcu/rotbot_mcu.ino`，板子選 Nucleo-64 → Board part number「Nucleo G474RE」，上傳（Mass Storage）。逐步說明見 [docs/00_todo.md](../docs/00_todo.md)。
 - arduino-cli：`arduino-cli compile --upload -p COM5 --fqbn STMicroelectronics:stm32:Nucleo_64:pnum=NUCLEO_G474RE firmware/rotbot_mcu`
 - Nucleo 的 I/O 是 3.3 V；電池分壓要配合 `VBAT_ADC_VREF`（量 CN5 第 8 腳 VREFP）。
-- 選配感測裝好後在 `config.h` 打開：`FLY_HAS_TACH`、`VBAT_ENABLED`、`FEED_HAS_HOME_SWITCH`、`ESTOP_SENSE_ENABLED`。
+- 選配感測裝好後在 `config.h` 打開：`FLY_HAS_TACH`、`VBAT_ENABLED`、`ESTOP_SENSE_ENABLED`。
 
 資源（STM32duino 3.0.0 / arm-none-eabi-gcc 14.2，2026-11-03 加車輪後）：G474RE 出廠設定 35.1 KB flash（6%）、2.0 KB RAM（1%）；全感測 42.0 KB（8%）、2.0 KB（1%）。
 Uno（avr-gcc 7.3，沒有車輪）：14.8 KB（45%）、765 B（37%）。

@@ -26,14 +26,29 @@
 #ifndef PIN_FLY_R
 #define PIN_FLY_R 6           // D6 (PB10, TIM2_CH3) 飛輪右 PWM
 #endif
-#ifndef PIN_FEED
-#define PIN_FEED 9            // D9 (PC7, TIM3_CH2)  推球（曲柄滑塊）馬達 PWM
+// 推球（曲柄滑塊）：28BYJ-48 + ULN2003 板的 IN1–IN4。11/19 從 TT（D9 PWM）改成步進，D0 原本留給推彈原點開關
+#ifndef PIN_FEED_IN1
+#define PIN_FEED_IN1 9        // D9 (PC7)
 #endif
-#ifndef PIN_FEED_HOME
+#ifndef PIN_FEED_IN2
 #if defined(ARDUINO_ARCH_STM32)
-#define PIN_FEED_HOME 0       // D0 (PC5) 推球原點開關（INPUT_PULLUP，LOW = 在原點）。11/18 從 PC10 移來：PC10 改給轉速計、D0 已拉到二樓
+#define PIN_FEED_IN2 0        // D0 (PC5)
 #else
-#define PIN_FEED_HOME A0      // Uno：A0
+#define PIN_FEED_IN2 A0       // Uno：A0
+#endif
+#endif
+#ifndef PIN_FEED_IN3
+#if defined(ARDUINO_ARCH_STM32)
+#define PIN_FEED_IN3 PD2      // CN7 內排第 2 支 (CN7-4)
+#else
+#define PIN_FEED_IN3 10       // Uno：D10
+#endif
+#endif
+#ifndef PIN_FEED_IN4
+#if defined(ARDUINO_ARCH_STM32)
+#define PIN_FEED_IN4 PB13     // CN10 外排第 15 支 (CN10-30)
+#else
+#define PIN_FEED_IN4 11       // Uno：D11
 #endif
 #endif
 #ifndef PIN_ESTOP_SENSE
@@ -193,21 +208,15 @@
 #define FLY_SPINUP_MS 1500           // 無轉速計時：改目標後等這麼久才算到速
 #endif
 
-// ===== 推球 =====
-#ifndef FEED_HAS_HOME_SWITCH
-#define FEED_HAS_HOME_SWITCH 0       // 1 = 有原點開關（轉一圈回原點即停）；0 = 固定時間
+// ===== 推球：28BYJ-48 步進，FIRE 一次轉一圈（整步、兩相同時通電）=====
+#ifndef FEED_STEPS_PER_REV
+#define FEED_STEPS_PER_REV 2048.0f   // 輸出軸一圈的整步數：32 × 減速 64（資料表）。連按 10 次推塊越停越偏 → 改 2037.89（實際減速 63.684 的版本）
 #endif
-#ifndef FEED_MS
-#define FEED_MS 250                  // 無開關：推球馬達運轉時間。11/18 使用者要縮短，400 → 250；要剛好一圈：按一次轉 n 圈 → 改成 250 ÷ n
+#ifndef FEED_STEP_HZ
+#define FEED_STEP_HZ 400.0f          // 最高步速（整步/s）：一圈 ≈ 2048 ÷ 400 + 0.5 = 5.6 s（含加減速）。帶球往上調到開始失步，再退一格
 #endif
-#ifndef FEED_MIN_MS
-#define FEED_MIN_MS 120              // 有開關：至少轉這麼久才認回原點（防抖）
-#endif
-#ifndef FEED_TIMEOUT_MS
-#define FEED_TIMEOUT_MS 1500         // 有開關：逾時視為卡彈 → EV FAULT
-#endif
-#ifndef FEED_PWM
-#define FEED_PWM 85                  // TB6612 VM 12 V → 平均 85 ÷ 255 × 12 ≈ 4.0 V。11/18 實機 127（6 V）使用者覺得太快；推不動就往上調（V ÷ 12 × 255，TT 標 3–7.2 V，單路 6 V 為上限）
+#ifndef FEED_ACCEL
+#define FEED_ACCEL 800.0f            // 加速度（整步/s²）：0.5 s 加到 400。改 FEED_STEP_HZ 時一起改成它的 2 倍
 #endif
 
 // ===== 時序 / 安全 =====

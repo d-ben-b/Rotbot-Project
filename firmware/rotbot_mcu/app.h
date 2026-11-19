@@ -43,7 +43,7 @@ class App {
   bool ready();
   void enterSafe();
   void updateFlywheel(uint32_t now, float dt);
-  void updateFeeder(uint32_t now);
+  void updateFeeder(float dt);
   void updateWheels(uint32_t now, float dt);
   void stopWheels();           // 目標與輸出立刻歸 0（煞車）
 
@@ -58,9 +58,10 @@ class App {
   uint32_t fly_changed_ms_ = 0, fly_ok_since_ms_ = 0;
   float fly_i_ = 0;
   bool fly_ok_ = false;
-  // 推球
-  bool firing_ = false, feed_left_home_ = false;
-  uint32_t fire_start_ms_ = 0;
+  // 推球：第三個步進軸，只往前轉，FIRE 一次轉一圈
+  StepAxis feed_;
+  float feed_rem_ = 0;         // 一圈步數的小數部分累積到下一發
+  bool firing_ = false;
   uint16_t shots_ = 0;
   // 車輪
   int16_t wheel_target_[4] = {0, 0, 0, 0};   // 千分比

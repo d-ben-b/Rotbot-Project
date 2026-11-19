@@ -5,9 +5,9 @@ firmware/rotbot_mcu 的 app.cpp / proto.cpp（Arduino 上跑的那份）+ firmwa
 （模擬硬體 + TCP）→ build/mcu_sil_<variant>。Orin 端程式用 SerialMCU("socket://127.0.0.1:5760")
 連線，與接真 Arduino 走同一條程式路徑。
 
-變體：full  = 選配感測全上：飛輪轉速計（PI 穩速）+ 電池電壓前饋補償 + 推球原點開關
+變體：full  = 選配感測全上：飛輪轉速計（PI 穩速）+ 電池電壓前饋補償
               （預設，6m 建議的硬體配置）
-      basic = 開迴路飛輪 + 固定時間推球（config.h 出廠值，Uno 初版接線）
+      basic = 開迴路飛輪（config.h 出廠值）
 
 編譯器：依序找 g++ / clang++ / c++；都沒有就用 pip 套件 ziglang（`pip install ziglang`，免安裝 VS）。
 
@@ -30,8 +30,10 @@ FW_DIR = REPO_ROOT / "firmware" / "rotbot_mcu"
 HOST_DIR = REPO_ROOT / "firmware" / "host"
 BUILD_DIR = REPO_ROOT / "build"
 SOURCES = [FW_DIR / "app.cpp", FW_DIR / "proto.cpp", HOST_DIR / "sil_main.cpp"]
-VARIANTS = {"full": ["-DFLY_HAS_TACH=1", "-DFEED_HAS_HOME_SWITCH=1", "-DVBAT_ENABLED=1"],
-            "basic": ["-DFLY_HAS_TACH=0", "-DFEED_HAS_HOME_SWITCH=0", "-DVBAT_ENABLED=0"]}
+# shortcut: 模擬器的推彈約 0.35 s 一圈（實機 28BYJ-48 約 5 s，見 config.h），測試不用每發等 5 秒；要模擬比賽節奏時拿掉這兩項
+SIL_FEED = ["-DFEED_STEP_HZ=6000", "-DFEED_ACCEL=200000"]
+VARIANTS = {"full": ["-DFLY_HAS_TACH=1", "-DVBAT_ENABLED=1", *SIL_FEED],
+            "basic": ["-DFLY_HAS_TACH=0", "-DVBAT_ENABLED=0", *SIL_FEED]}
 
 
 class CompilerNotFound(RuntimeError):
