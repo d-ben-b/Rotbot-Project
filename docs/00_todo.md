@@ -23,7 +23,7 @@
 
 - [x] Nucleo 燒錄；`mcu_link_test --port COM5` PASS 12、FAIL 0，往返平均 3.06 ms（11/04）
 - [x] 燒錄 11/15 的韌體（水平每度 48.254 步）：11/16 水平轉 90° 角度正確，代表已經燒進去
-- [ ] 燒錄 11/18 的韌體（車輪電源改 12 V，`WHEEL_MAX_PERMILLE` 714 改成 1000；推彈 `FEED_PWM` 200 改成 85，TB6612 VM 12 V 時平均約 4 V）。燒完按 RESET，`mcu_link_test --port COM5` 要 FAIL 0
+- [ ] 燒錄 11/18 的韌體（車輪電源改 12 V，`WHEEL_MAX_PERMILLE` 714 改成 1000；推彈 `FEED_PWM` 85，TB6612 VM 12 V 時平均約 4 V；推彈 `FEED_MS` 400 改成 250）。燒完按 RESET，`mcu_link_test --port COM5` 要 FAIL 0；按空白鍵時 TT 比 6 V 那版慢、轉的時間短，代表已經燒進去。水平改接 12 V 不用重燒
 
 ### A. 水平轉台（詳細步驟：2-1）
 
