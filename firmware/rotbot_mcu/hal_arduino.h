@@ -7,7 +7,11 @@
 #include "hal.h"
 
 #ifndef ESTOP_SENSE_ENABLED
-#define ESTOP_SENSE_ENABLED 0   // 急停輔助接點接好後改 1（沒接線時腳位浮接會一直判成急停）
+#define ESTOP_SENSE_ENABLED 1   // 1 = 讀 A1 的急停輔助接點（11/19 使用者接好、改 1）
+#endif
+#ifndef ESTOP_SENSE_NO
+#define ESTOP_SENSE_NO 1        // 1 = A1 接常開（NO）接點：平常沒接通，按下才接 GND → LOW = 急停（11/19 實際接法）。
+                                // 0 = 常閉（NC）：平常接 GND，按下或斷線 → HIGH = 急停。NC 斷線也會停，比較安全
 #endif
 #ifndef PITCH_DIR_INVERT
 #define PITCH_DIR_INVERT 0      // 方向接反時改 1
@@ -31,7 +35,7 @@ class ArduinoHal : public Hal {
   void enableFeeder(bool on) override { writeFeed(on); }
   bool estopActive() override {
 #if ESTOP_SENSE_ENABLED
-    return digitalRead(PIN_ESTOP_SENSE) == HIGH;
+    return digitalRead(PIN_ESTOP_SENSE) == (ESTOP_SENSE_NO ? LOW : HIGH);
 #else
     return false;
 #endif

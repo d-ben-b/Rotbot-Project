@@ -52,7 +52,7 @@
 #endif
 #endif
 #ifndef PIN_ESTOP_SENSE
-#define PIN_ESTOP_SENSE A1    // A1 (PA1)  急停輔助接點（INPUT_PULLUP，HIGH = 已按下 / 斷線）
+#define PIN_ESTOP_SENSE A1    // A1 (PA1)  急停輔助接點（INPUT_PULLUP；哪個電位算急停看 hal_arduino.h 的 ESTOP_SENSE_NO）
 #endif
 #ifndef PIN_VBAT
 #define PIN_VBAT A2           // A2 (PA4)  飛輪電池電壓（分壓後接入，選用；不可超過 VBAT_ADC_VREF）
