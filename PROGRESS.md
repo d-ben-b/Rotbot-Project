@@ -220,6 +220,7 @@ v0 逐發抖動 ≤ 0.1 m/s；練習→比賽轉速漂移 < 1%（否則需要比
 - 推測：合成資料的加分孔沒有外框。手機截圖經過壓縮和放大、拍攝角度也不同，要用 IMX296 實拍確認。結果和可能的修正寫在 `docs/camera_yolo_risks.md`「場地照片」。
 - `docs/00_todo.md` 第 6 步第 6 點改成續 2 的行為：開車後停下、畫面有 4 個以上一般孔時，每 0.5 s 重新量。
 - Orin 更新用的 bundle 重建到 39168e8（`runs/to_orin/rotbot.bundle`）。
+- `docs/00_todo.md` 第 6 步第 2 點：從筆電 ssh 啟動 `robot_main` 改用 `nohup python3 -u ... > runs/robot_main.log &`。原因：Wi‑Fi 斷線會關掉 ssh，程式跟著結束、比賽計時就沒了。結束用 `pkill -INT`（aiohttp 收到 SIGINT 會正常結束，`finally` 存轉塔角度）。沒在 Orin 上試過。
 - 沒有改程式，沒有跑 pytest。
 
 ### 2026-11-21（續 2）：手動時重新量網板，開車後預估落點跟著新位置；場地照片紀錄

@@ -874,6 +874,15 @@ Nucleo 在一樓，一樓只有水平（D4、D7、A3）和四個車輪。下表�
    - 序列埠權限：`sudo usermod -aG dialout $USER`，重新登入才生效。Nucleo 接上 Jetson 會是 `/dev/ttyACM0`。
 
 2. 在 Jetson 上執行 `python3 -m tools.robot_main --mcu /dev/ttyACM0`，相機會自動用 IMX296。
+   - 從筆電 ssh 進去啟動時用 `nohup`。直接執行的話，Wi‑Fi 斷線會關掉 ssh，`robot_main` 跟著結束，比賽計時就沒了：
+
+     ```bash
+     cd ~/Desktop/Rotbot-Project
+     nohup python3 -u -m tools.robot_main --mcu /dev/ttyACM0 > runs/robot_main.log 2>&1 &
+     tail -f runs/robot_main.log      # 看輸出；Ctrl+C 只關掉 tail，程式繼續跑
+     ```
+
+   - 賽後結束程式：`pkill -INT -f tools.robot_main`（等同 Ctrl+C，會存好轉塔角度）。
 3. 筆電或手機連同一台路由器，打開它印出來的網址（`http://192.168.x.x:8080`）。
    - 用搖桿時不能直接開 IP，瀏覽器會擋搖桿。筆電先執行 `ssh -N -L 8080:127.0.0.1:8080 ben-orin@192.168.50.10`（視窗開著），再開 `http://localhost:8080`。
 4. 歸零：只有第一次（或 Orin 上的 `runs/turret_pose.json` 不見了、轉塔拆過）要手動做。
