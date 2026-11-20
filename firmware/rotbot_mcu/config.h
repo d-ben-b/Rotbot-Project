@@ -220,7 +220,8 @@
 #endif
 
 // ===== 彈倉：N20 + TB6612 A 路 + 微動開關（11/21）=====
-// FIRE：開關沒被球壓著 → N20 往前推，開關壓下就停 → 推彈轉一圈。MAG_TIMEOUT_MS 內沒壓到 → N20 停、送 EV FAULT 1、不推彈
+// FIRE：N20 往前推 → 開關壓下後再推 MAG_EXTRA_MS（球才會掉進推塊前面）→ N20 停 → 推彈轉一圈。
+// MAG_TIMEOUT_MS 內沒壓到開關 → N20 停、送 EV FAULT 1、不推彈
 #ifndef MAG_ENABLED
 #if defined(ARDUINO_ARCH_STM32)
 #define MAG_ENABLED 1
@@ -239,6 +240,9 @@
 #endif
 #ifndef MAG_DEBOUNCE_MS
 #define MAG_DEBOUNCE_MS 5            // 開關連續壓著這麼久才算到位（擋馬達雜訊造成的短暫 LOW）
+#endif
+#ifndef MAG_EXTRA_MS
+#define MAG_EXTRA_MS 300             // 開關壓下後 N20 再轉多久。11/21 實機：壓到就停時球停在邊緣掉不下去。球還掉不下去就加 100；一次掉兩顆就減
 #endif
 
 // ===== 時序 / 安全 =====

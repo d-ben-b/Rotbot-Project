@@ -52,7 +52,7 @@ Jetson Orin (Python)                         NUCLEO-G474RE (C++，STM32duino)
 | `ZERO` | pitch_cdeg, yaw_cdeg | `ACK` | 宣告目前姿態角度（開機擺好起始姿態後；**未 ZERO 不准 AIM**） |
 | `AIM` | pitch_cdeg, yaw_cdeg | `ACK` / `NAK` | 轉到絕對角度（梯形速度、減速停在目標） |
 | `FLY` | rpm | `ACK` / `NAK` | 飛輪目標轉速（0 = 停） |
-| `FIRE` | – | `ACK` 後送 `EV FIRED` / `NAK` | **到位穩定 + 飛輪到速才推球**。先上彈：微動開關沒被球壓著就轉彈倉 N20，壓下才停，再推彈轉一圈 |
+| `FIRE` | – | `ACK` 後送 `EV FIRED` / `NAK` | **到位穩定 + 飛輪到速才推球**。先上彈：彈倉 N20 轉到微動開關壓下，再多轉 `MAG_EXTRA_MS`（0.3 s）讓球掉下去，然後推彈轉一圈 |
 | `JOG` | pitch_cdps, yaw_cdps | `ACK` | 手動速度模式（需持續送，否則看門狗停） |
 | `STOP` | – | `ACK` | JOG 歸零、飛輪停、車輪停（位置保持） |
 | `DRIVE` | m1, m2, m3, m4（千分比 ±1000） | `ACK` / `NAK` | 四輪輸出（M1 左前、M2 左後、M3 右前、M4 右後；正 = 前進）。變化率限制 `WHEEL_SLEW_PER_S`；**`DRIVE_TIMEOUT_MS`（0.5 s）沒收到就停** |

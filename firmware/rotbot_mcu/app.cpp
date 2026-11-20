@@ -246,7 +246,8 @@ void App::handleLine(char* line) {
     loading_ = feed_.pos == feed_.target;      // 上一圈被急停打斷時不上彈：推塊可能還在前面，先把那一圈轉完
     if (loading_) {
       load_ms_ = sw_ms_ = now;
-      hal_.setMagazine(!hal_.ballReady());     // 球已經壓著開關就不轉 N20
+      pressed_ = false;
+      hal_.setMagazine(true);                  // 開關已經被壓著也要轉：壓著開關的球停在邊緣，還沒掉下去
     } else {
       startPush();
     }
@@ -363,11 +364,18 @@ void App::startPush() {
 void App::updateFeeder(uint32_t now, float dt) {
   if (!firing_) return;
   if (loading_) {
+    if (pressed_) {
+      if ((uint32_t)(now - sw_ms_) >= MAG_EXTRA_MS) {           // 壓到開關後多推的時間到 → N20 停、推彈
+        hal_.setMagazine(false);
+        loading_ = false;
+        startPush();
+      }
+      return;
+    }
     if (!hal_.ballReady()) sw_ms_ = now;
-    if ((uint32_t)(now - sw_ms_) >= MAG_DEBOUNCE_MS) {          // 球壓著開關 → N20 停、推彈
-      hal_.setMagazine(false);
-      loading_ = false;
-      startPush();
+    if ((uint32_t)(now - sw_ms_) >= MAG_DEBOUNCE_MS) {          // 球壓著開關：開始計時多推 MAG_EXTRA_MS
+      pressed_ = true;
+      sw_ms_ = now;
     } else if ((uint32_t)(now - load_ms_) >= MAG_TIMEOUT_MS) {  // 沒球或卡住：不推彈，等下一個 FIRE
       hal_.setMagazine(false);
       loading_ = firing_ = false;

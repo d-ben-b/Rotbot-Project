@@ -210,6 +210,22 @@ def test_feed_check_fires_n_shots(sil):
         assert len(times) == 2 and mcu.get_status().shots == 2
 
 
+def test_magazine_keeps_pushing_after_switch(sil):
+    """開關壓下後 N20 再推 MAG_EXTRA_MS（300 ms）才推彈：FIRE → FIRED 至少 0.3 s + 推彈一圈約 0.35 s。"""
+    import time
+
+    from rotbot.actuation.link import SerialMCU
+    with SerialMCU(sil.url) as mcu:
+        mcu.zero(0, 0)
+        mcu.flywheel(960)
+        mcu.wait_ready(timeout=6.0)
+        mark = mcu.event_mark()
+        t0 = time.perf_counter()
+        mcu.fire()
+        mcu.wait_event("FIRED", timeout=3.0, since=mark)
+        assert time.perf_counter() - t0 >= 0.6
+
+
 def test_empty_magazine_faults_without_pushing(sil):
     """彈倉沒球：N20 轉到 MAG_TIMEOUT_MS（模擬器 0.5 s）還沒壓到開關 → EV FAULT 1、不推彈；補球後照常推。"""
     from rotbot.actuation.link import LinkError, SerialMCU
