@@ -150,13 +150,13 @@
 #define YAW_MAX_CDEG 9000L
 #endif
 #ifndef PITCH_MAX_DPS
-#define PITCH_MAX_DPS 60.0f          // 位置模式最高角速度 (deg/s)。11/20 皮帶跳齒是一顆 XH5776C 沒裝保險絲、只有一顆出力，不是速度問題
+#define PITCH_MAX_DPS 20.0f          // 位置模式最高角速度 (deg/s)。11/20 兩顆都有電、脈衝修好後，60 時往上接近 60° 會滑牙，使用者要慢一點 → 20（0→60° 約 3.3 s，AI 等到位 4 s 內）
 #endif
 #ifndef YAW_MAX_DPS
 #define YAW_MAX_DPS 30.0f            // 11/19 實機：90 時「重置」轉回 0° 太快、停的位置不對（推測失步）→ 30；還會失步就再降或把 Vref 調高
 #endif
 #ifndef PITCH_ACCEL_DPS2
-#define PITCH_ACCEL_DPS2 240.0f      // 角加速度 (deg/s^2)
+#define PITCH_ACCEL_DPS2 60.0f       // 角加速度 (deg/s^2)。11/20：240 → 60，0.33 s 加到 20°/s（JOG 也用這個加速度）
 #endif
 #ifndef YAW_ACCEL_DPS2
 #define YAW_ACCEL_DPS2 90.0f         // 11/19：360 → 90，0.33 s 加到 30°/s（JOG 也用這個加速度）
