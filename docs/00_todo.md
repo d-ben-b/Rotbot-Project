@@ -89,7 +89,8 @@
 - [x] Orin 上用手把轉轉塔（11/04）
 - [x] 相機內參標定（10/07）
 - [x] TensorRT 模型推論約 122 次/秒；電池和變壓器供電結果相同（11/06）
-- [ ] Orin 更新到最新程式（`00_commands.md` 第 5 節）。推測 Orin 上還是 11/04 的版本（7cb8d14），沒有之後的轉塔存檔、起始框、到位判斷 0.1° 這些修改
+- [x] Orin 更新到最新程式（`00_commands.md` 第 5 節）：11/20 從 17e5406（11/04）快轉到 594da11。筆電和 Orin 用 USB 線連接時走 USB 網路，`scp` 到 `ben-orin@192.168.55.1`，不用連路由器
+- [ ] **高** Orin 的 SD 卡：11/20 SSH 登入時出現一次 `/etc/bash.bashrc: Input/output error`，第二次又正常。跑 `sudo dmesg | grep -iE "mmc|i/o error|ext4" | tail -30`，有錯誤就把 TensorRT 模型、`runs/` 複製回筆電，換新 SD 卡
 - [ ] Orin 裝 PyTorch、ultralytics、模型權重（第 6 步第 1 點）
 - [ ] 相機動過（11/15）：確認對焦環、光圈環沒轉到；轉到了就重新標定內參
 - [ ] 量相機外參 `camera_mount`（第 3 步「相機外參」）。角度差 1° 在 6 m 落點差約 10 cm
