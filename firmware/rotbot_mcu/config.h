@@ -165,7 +165,7 @@
 #define JOG_MAX_DPS 60.0f            // 手動速度上限
 #endif
 #ifndef STEP_PULSE_US
-#define STEP_PULSE_US 5              // STEP 脈寬：TMC2209 要 >= 0.1 us；XH5776C 說明書要 >= 2.5 us
+#define STEP_PULSE_US 20             // STEP 脈寬：TMC2209 要 >= 0.1 us；XH5776C 說明書要 >= 2.5 us。11/20 實機：5 us 時俯仰指令 60° 只轉 30°（撥碼 3200、皮帶 20→60 都正確），推測經 ULN2003 + 光耦後脈衝太短、少數一半 → 20
 #endif
 #ifndef DIR_SETUP_US
 #define DIR_SETUP_US 10              // DIR 改變後到下一個 STEP：XH5776C 說明書要 > 5 us；ULN2003 關斷比導通慢約 1 us，留餘裕
