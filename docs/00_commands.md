@@ -153,10 +153,10 @@ python -m tools.mcu_link_test --port COM5 --allow-drive
 python -m tools.turret_check --port COM5 --axis yaw --deg 5
 ```
 
-**水平：轉 90° 停 10 秒，量每度幾步**
+**水平：轉 35° 停 10 秒，量每度幾步**（上限 ±35°）
 
 ```powershell
-python -m tools.turret_check --port COM5 --axis yaw --deg 90 --hold 10
+python -m tools.turret_check --port COM5 --axis yaw --deg 35 --hold 10
 ```
 
 **水平：來回 20 次，看重複精度**

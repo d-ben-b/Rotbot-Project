@@ -6,7 +6,7 @@
 
 用法：
     python -m tools.turret_check --port COM5 --axis yaw --deg 5             # 第一次：小角度，看方向
-    python -m tools.turret_check --port COM5 --axis yaw --deg 90 --hold 10  # 量每度幾步：停 10 秒量角度
+    python -m tools.turret_check --port COM5 --axis yaw --deg 35 --hold 10  # 量每度幾步：停 10 秒量角度（水平上限 ±35°）
     python -m tools.turret_check --port COM5 --axis yaw --deg 30 --cycles 20  # 來回 20 次，看雷射點有沒有跑掉
 """
 from __future__ import annotations

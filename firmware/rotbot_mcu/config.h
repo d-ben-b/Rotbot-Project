@@ -144,10 +144,10 @@
 #define PITCH_MAX_CDEG 3000L        // 11/20 實機：超過 30° 皮帶會滑牙 → 上限 30°（實測 v0 18 m/s 時加分排最多要 28.4°）。網頁 W 鍵、AI 瞄準都受這個限制
 #endif
 #ifndef YAW_MIN_CDEG
-#define YAW_MIN_CDEG (-9000L)
+#define YAW_MIN_CDEG (-3500L)       // 11/21 使用者要求：水平 ±35°。網頁 A/D 鍵、AI 瞄準、找網板都受這個限制
 #endif
 #ifndef YAW_MAX_CDEG
-#define YAW_MAX_CDEG 9000L
+#define YAW_MAX_CDEG 3500L
 #endif
 #ifndef PITCH_MAX_DPS
 #define PITCH_MAX_DPS 20.0f          // 位置模式最高角速度 (deg/s)。11/20 兩顆都有電、脈衝修好後，60 時往上接近 60° 會滑牙，使用者要慢一點 → 20（0→60° 約 3.3 s，AI 等到位 4 s 內）

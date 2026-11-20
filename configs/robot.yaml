@@ -20,8 +20,8 @@ launcher:                # 雙飛輪對夾摩擦投射
   pivot_forward: 0.0        # 轉塔樞軸相對底盤中心的前移 (m)
 
 turret:                  # 轉塔：迴轉滾珠軸承(yaw) + 90°扇形齒輪+Y架(pitch)，步進馬達雙軸
-  yaw_min_deg: -180
-  yaw_max_deg: 180
+  yaw_min_deg: -35
+  yaw_max_deg: 35         # 11/21：韌體 YAW_MIN/MAX_CDEG ±3500
   pitch_min_deg: 0
   pitch_max_deg: 30       # 11/20：超過 30° 皮帶會滑牙；韌體 PITCH_MAX_CDEG 3000
 

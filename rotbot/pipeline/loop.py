@@ -33,7 +33,7 @@ from .state_machine import GameState
 
 # 轉塔軟體角度限制（同韌體 config.h 的 PITCH_MIN/MAX_CDEG、YAW_MIN/MAX_CDEG，各留 1°）：找網板時不超過
 PITCH_RANGE = (-4.0, 59.0)
-YAW_RANGE = (-89.0, 89.0)
+YAW_RANGE = (-34.0, 34.0)
 
 
 def _clamp_pose(pitch: float, yaw: float) -> tuple[float, float]:
