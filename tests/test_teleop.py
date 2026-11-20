@@ -476,6 +476,9 @@ def test_teleop_follows_hardware_estop():
                 mcu.write_raw(b"!ESTOP 1\n")
                 await _wait(ws, lambda m: m["t"] == "notice" and m["msg"].startswith("實體急停"))
                 await _wait(ws, lambda m: m["t"] == "state" and m["game"] == "ESTOP" and m["mcu"]["homed"])
+                assert mcu.get_status().pitch_deg == pytest.approx(-15.0, abs=0.02)   # 自動補回：俯仰落在靜止角度
+                await ws.send_json({"t": "cmd", "name": "zero"})       # 實體急停時手動歸零也用靜止角度
+                await _wait(ws, lambda m: m["t"] == "notice" and m["msg"] == "已把目前姿態設為 (-15°, 0°)")
                 mcu.write_raw(b"!ESTOP 0\n")
                 await _wait(ws, lambda m: m["t"] == "state" and not m["mcu"]["estop"])
                 await ws.send_json({"t": "cmd", "name": "resume"})
@@ -487,7 +490,7 @@ def test_teleop_follows_hardware_estop():
             await runner.cleanup()
 
     with SilProcess("full") as sil:
-        with SerialMCU(sil.url, keep_pose_on_estop=True) as mcu:
+        with SerialMCU(sil.url, keep_pose_on_estop=True, pitch_rest_deg=-15.0) as mcu:
             mcu.zero(0.0, 0.0)
             asyncio.run(scenario(mcu))
 

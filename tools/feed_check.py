@@ -2,7 +2,8 @@
 """推彈檢查：送 n 次 FIRE，每次等 EV FIRED，印出每一發用了幾秒（接上真的 Nucleo）。
 
 推彈是 28BYJ-48（config.h 的 FEED_*），FIRE 一次轉一圈。韌體要「已歸零 + 摩擦輪到速 + 轉塔停穩」才接受 FIRE：
-  * MCU 還沒歸零：把目前姿態設成 (0°, 0°)。之後要用轉塔，擺好姿態再到 teleop 重新歸零。
+  * MCU 還沒歸零（剛開機或急停過，俯仰落在靜止角度）：把目前姿態設成 (field.yaml turret.pitch_rest_deg, 0°)。
+    水平沒擺正前方的話，之後要用轉塔，擺好姿態再到 teleop 重新歸零。
   * --rpm 0（預設）：送 FLY 1，換算成 PWM 是 0，摩擦輪不轉；沒有轉速計時 1.5 s 後就算到速。
     shortcut: 只在 FLY_HAS_TACH 0（目前實機）有效；裝了轉速計後要給真的轉速。
   * Ctrl+C 不會中斷正在轉的那一圈（韌體會轉完）；要立刻停就按急停。
@@ -25,6 +26,7 @@ if __package__ in (None, ""):
 
 from rotbot.actuation import protocol
 from rotbot.actuation.link import LinkError, SerialMCU
+from rotbot.config import load_config
 
 
 def run(mcu, shots: int, rpm: int = 0, gap: float = 1.0, log=print) -> list[float]:
@@ -33,8 +35,9 @@ def run(mcu, shots: int, rpm: int = 0, gap: float = 1.0, log=print) -> list[floa
     if st.estop:
         raise LinkError("MCU 在急停狀態：放開急停再試")
     if not st.homed:
-        mcu.zero(0.0, 0.0)
-        log("MCU 還沒歸零：已把目前姿態設成 (0°, 0°)")
+        p = mcu.pitch_rest_deg or 0.0
+        mcu.zero(p, 0.0)
+        log(f"MCU 還沒歸零：已把目前姿態設成 ({p:g}°, 0°)")
     mcu.flywheel(max(1, rpm))
     log("等 READY（摩擦輪到速、轉塔停穩）…")
     mcu.wait_ready(timeout=6.0)
@@ -63,7 +66,7 @@ def main():
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
     try:
-        mcu = SerialMCU(args.port).open()
+        mcu = SerialMCU(args.port, pitch_rest_deg=load_config().turret.pitch_rest_deg).open()
     except Exception as e:
         sys.exit(f"開不了 {args.port}：{e}\n（teleop_web 還開著的話先關掉）")
     print(f"推彈 {args.shots} 次、摩擦輪 {args.rpm} rpm；Ctrl+C 停止（正在轉的那一圈會轉完）")

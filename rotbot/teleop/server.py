@@ -551,8 +551,11 @@ class TeleopServer:
         elif name == "zero":
             if self.sm.state not in (GameState.IDLE, GameState.ESTOP):
                 await self._notice(c, "只能在待命或急停時歸零（擺好起始姿態後按）")
-            elif await self._mcu("zero", 0.0, 0.0):
-                await self._notice(c, "已把目前姿態設為 (0°, 0°)")
+            else:
+                s, rest = getattr(self.mcu, "status", None), getattr(self.mcu, "pitch_rest_deg", None)
+                p = rest if rest is not None and s is not None and s.estop else 0.0   # 實體急停：步進沒電，俯仰落在靜止角度
+                if await self._mcu("zero", p, 0.0):
+                    await self._notice(c, f"已把目前姿態設為 ({p:g}°, 0°)")
         else:
             await self._notice(c, f"未知指令 {name}")
 

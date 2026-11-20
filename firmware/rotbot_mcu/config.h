@@ -138,7 +138,7 @@
 #define YAW_STEPS_PER_DEG 48.254f    // 200 步 × 16 微步 × 行星齒輪 38/7 / 360°；太陽 21 齒接馬達、外環 93 齒固定、行星支架輸出 → 減速比 1 + 93/21
 #endif
 #ifndef PITCH_MIN_CDEG
-#define PITCH_MIN_CDEG (-500L)       // 0.01°
+#define PITCH_MIN_CDEG (-1500L)      // 0.01°。11/21：裝彈倉後斷電落到 −15°（field.yaml turret.pitch_rest_deg），急停補回要 ZERO 到 −15°
 #endif
 #ifndef PITCH_MAX_CDEG
 #define PITCH_MAX_CDEG 3000L        // 11/20 實機：超過 30° 皮帶會滑牙 → 上限 30°（實測 v0 18 m/s 時加分排最多要 28.4°）。網頁 W 鍵、AI 瞄準都受這個限制
