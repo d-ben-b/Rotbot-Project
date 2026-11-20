@@ -212,6 +212,13 @@ v0 逐發抖動 ≤ 0.1 m/s；練習→比賽轉速漂移 < 1%（否則需要比
 > **append-only**：每次更新只**新增**條目、不改舊條目，保留數字與決策的演進供工作日誌追蹤。
 > 上方 §0–§8 為「最新快照」；本區為「歷史紀錄」。新到舊排列。
 
+### 2026-11-21（續 6）：等 FIRED 時收到 EV FAULT 立刻報錯
+
+- 使用者跑 `feed_check --port COM5`：推彈、N20 都沒轉，10 s 後報「等不到事件 FIRED」。推測已燒錄彈倉韌體，FIRE 時微動開關 3 s 內沒被壓下，韌體送 `EV FAULT 1`、不推彈；舊程式只等 `FIRED`，看不出原因。待使用者再跑一次確認。
+- `link.py` `wait_event("FIRED")`：mark 之後收到 `FAULT` 就丟 `LinkError`（訊息寫沒球、N20 沒轉或開關沒接 D1）。feed_check、`ControlLoop`、`mcu_link_test`、`SerialMCU.send` 都經過這裡，彈倉逾時約 3 s 就報錯，不用等到 10 s 逾時。
+- `test_empty_magazine_faults_without_pushing` 改成等 `FIRED` 時要丟出含 `FAULT 1` 的 `LinkError`。
+- 驗證：pytest 146 passed、2 skipped。
+
 ### 2026-11-21（續 5）：水平上限 ±90° → ±35°（韌體，待燒錄）
 
 - 使用者要求水平上限設成 ±35°。

@@ -212,7 +212,7 @@ def test_feed_check_fires_n_shots(sil):
 
 def test_empty_magazine_faults_without_pushing(sil):
     """彈倉沒球：N20 轉到 MAG_TIMEOUT_MS（模擬器 0.5 s）還沒壓到開關 → EV FAULT 1、不推彈；補球後照常推。"""
-    from rotbot.actuation.link import SerialMCU
+    from rotbot.actuation.link import LinkError, SerialMCU
     with SerialMCU(sil.url) as mcu:
         mcu.zero(0, 0)
         mcu.flywheel(960)
@@ -222,7 +222,8 @@ def test_empty_magazine_faults_without_pushing(sil):
         mark = mcu.event_mark()
         mcu.fire()
         assert mcu.wait_event("FAULT", timeout=2.0, since=mark).arg == 1
-        assert mcu.wait_event("FIRED", timeout=0.3, since=mark, raise_on_timeout=False) is None
+        with pytest.raises(LinkError, match="FAULT 1"):   # 等 FIRED 時收到 FAULT 立刻報錯，不等到逾時
+            mcu.wait_event("FIRED", timeout=0.3, since=mark)
         st = mcu.get_status()
         assert st.shots == shots0 and not st.firing
         mcu.write_raw(b"!BALLS 1000\n")

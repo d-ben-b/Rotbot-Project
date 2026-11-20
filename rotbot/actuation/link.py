@@ -333,6 +333,9 @@ class SerialMCU(ActuatorLink):
                 for idx, e in self._events:
                     if idx > mark and e.name == name:
                         return e
+                    if idx > mark and name == "FIRED" and e.name == "FAULT":   # 這一發不會再有 FIRED
+                        raise LinkError(f"EV FAULT {e.arg}：彈倉 3 s 內沒壓到微動開關，沒推彈"
+                                        "（沒球、N20 沒轉，或開關沒接到 D1）")
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     if raise_on_timeout:
