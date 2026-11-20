@@ -30,7 +30,7 @@ from rotbot.teleop.server import TeleopServer
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
-def build_robot(cfg: Config, mcu, camera, detector, *, rpm: float = 2400, calib_path: str | None = None,
+def build_robot(cfg: Config, mcu, camera, detector, *, rpm: float = 960, calib_path: str | None = None,
                 practice: int = 0, observe_impact=None, auto_s: float = 60.0, match_s: float = 180.0,
                 seed: int = 0, on_log=None, start_box: str | None = None):
     """組裝 (TeleopServer, AutonomousRunner, SharedCamera)；runner 尚未 start()。
@@ -73,7 +73,7 @@ def main():
     ap.add_argument("--mcu", help="COM5 / /dev/ttyACM0 / socket://…")
     ap.add_argument("--camera", default="cfg", help="cfg = field.yaml 的 camera_hw（IMX296）/ USB 相機編號 / GStreamer 管線")
     ap.add_argument("--weights", default=str(REPO_ROOT / "models" / "grid_holes_yolo11n.pt"))
-    ap.add_argument("--rpm", type=float, default=2400)
+    ap.add_argument("--rpm", type=float, default=960)   # = field.yaml 的 rpm_model（11/20 實測 v0 約 18 m/s）
     ap.add_argument("--calib", help="賽前練習存下的校正狀態 JSON")
     ap.add_argument("--host", default="0.0.0.0")
     ap.add_argument("--port", type=int, default=8080)

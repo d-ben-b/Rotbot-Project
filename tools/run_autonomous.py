@@ -41,7 +41,7 @@ def main():
     ap.add_argument("--detector", choices=["perfect", "yolo"], default="perfect",
                     help="孿生時：perfect=讀真值、yolo=真模型看合成影像；實機一律 yolo")
     ap.add_argument("--weights", default=str(REPO_ROOT / "models" / "grid_holes_yolo11n.pt"))
-    ap.add_argument("--rpm", type=float, default=2400)
+    ap.add_argument("--rpm", type=float, default=960)   # = field.yaml 的 rpm_model
     ap.add_argument("--balls", type=int, default=27)
     ap.add_argument("--practice", type=int, default=9, help="孿生時：先跑幾球賽前練習暖機校正（0=不暖機）")
     ap.add_argument("--calib", help="載入賽前練習存下的校正狀態 JSON")

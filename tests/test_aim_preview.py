@@ -47,7 +47,7 @@ def test_marker_is_where_the_camera_sees_the_hole_not_the_image_center():
         r = pv.predict(p, y, RPM, K)
         assert hole.visible
         assert np.hypot(*(np.asarray(r.px) - hole.center_px)) < 2.0
-        assert r.px[1] - CFG.camera.cy > 250
+        assert r.px[1] - CFG.camera.cy > 150        # v0_model 18 m/s 時約 196–205 px（14 m/s 時更大）
 
 
 def test_rpm_scales_v0_and_flywheel_off_means_no_shot():
@@ -59,7 +59,7 @@ def test_rpm_scales_v0_and_flywheel_off_means_no_shot():
 
 
 def test_practice_calibration_makes_preview_match_simulated_world():
-    """模擬世界（v0 13.44、Cd 0.50、安裝偏差）：沒校正時預估差約 20 cm；賽前練習 9 球的校正帶進來後 < 6 cm。"""
+    """模擬世界（v0_real 比 v0_model 低約 4%、Cd 0.50、安裝偏差）：沒校正時預估差約 20 cm；賽前練習 9 球的校正帶進來後 < 6 cm。"""
     world = BallisticWorld(CFG, np.random.default_rng(0))
     m = CFG.mechanism
     raw = AimPreview(CFG)
@@ -80,12 +80,13 @@ def test_draw_offscreen_arrow_and_no_shot():
     """落點在畫面外 → 邊緣畫箭頭；球到不了網板 → 小地圖寫 NO SHOT。兩種都不能讓串流執行緒出錯。"""
     K = CFG.camera.matrix()
     pv = AimPreview(CFG)
-    r = pv.predict(45.0, 0.0, 1800, K)                     # 仰角大、轉速低：落點掉到畫面下緣外
+    slow = RPM * 10.5 / CFG.launch.v0_model                # 轉速指令換成 v0 10.5 m/s，不受 v0_model 設定影響
+    r = pv.predict(45.0, 0.0, slow, K)                     # 仰角大、初速低：落點掉到畫面下緣外
     assert r is not None and not r.inside and r.px[1] > CFG.camera.height
     img = np.zeros((717, 960, 3), np.uint8)
     pv.draw(img, r, 960 / CFG.camera.width)
     assert img[690:717, 300:660].any()                     # 下緣有箭頭
-    assert pv.predict(5.0, 0.0, RPM, K) is None            # 俯仰 5°：到網板前就落地
+    assert pv.predict(0.0, 0.0, RPM, K) is None            # 俯仰 0°：到網板前就落地（11/20 實測水平射出落地 5.35 m < 6 m）
     img2 = np.zeros((717, 960, 3), np.uint8)
     pv.draw(img2, None, 960 / CFG.camera.width)
     assert img2[-40:, -100:].any() and not img2[:600, :700].any()
