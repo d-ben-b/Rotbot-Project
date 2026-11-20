@@ -23,7 +23,7 @@ turret:                  # 轉塔：迴轉滾珠軸承(yaw) + 90°扇形齒輪+Y
   yaw_min_deg: -180
   yaw_max_deg: 180
   pitch_min_deg: 0
-  pitch_max_deg: 90
+  pitch_max_deg: 30       # 11/20：超過 30° 皮帶會滑牙；韌體 PITCH_MAX_CDEG 3000
 
 magazine:                # 彈倉轉輪：每倉4顆、齒輪齒條推球、清空自動換倉
   balls_per_chamber: 4

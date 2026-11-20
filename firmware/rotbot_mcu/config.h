@@ -141,7 +141,7 @@
 #define PITCH_MIN_CDEG (-500L)       // 0.01°
 #endif
 #ifndef PITCH_MAX_CDEG
-#define PITCH_MAX_CDEG 6000L
+#define PITCH_MAX_CDEG 3000L        // 11/20 實機：超過 30° 皮帶會滑牙 → 上限 30°（實測 v0 18 m/s 時加分排最多要 28.4°）。網頁 W 鍵、AI 瞄準都受這個限制
 #endif
 #ifndef YAW_MIN_CDEG
 #define YAW_MIN_CDEG (-9000L)
