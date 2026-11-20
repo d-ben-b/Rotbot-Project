@@ -43,7 +43,8 @@ class App {
   bool ready();
   void enterSafe();
   void updateFlywheel(uint32_t now, float dt);
-  void updateFeeder(float dt);
+  void updateFeeder(uint32_t now, float dt);
+  void startPush();            // 推彈開始轉一圈（上一圈被急停打斷時只轉完那一圈）
   void updateWheels(uint32_t now, float dt);
   void stopWheels();           // 目標與輸出立刻歸 0（煞車）
 
@@ -62,6 +63,8 @@ class App {
   StepAxis feed_;
   float feed_rem_ = 0;         // 一圈步數的小數部分累積到下一發
   bool firing_ = false;
+  bool loading_ = false;       // FIRE 的第一段：彈倉 N20 把球推到微動開關
+  uint32_t load_ms_ = 0, sw_ms_ = 0;   // 開始上彈的時間；開關最近一次沒被壓著的時間（去彈跳）
   uint16_t shots_ = 0;
   // 車輪
   int16_t wheel_target_[4] = {0, 0, 0, 0};   // 千分比

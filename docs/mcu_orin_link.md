@@ -52,7 +52,7 @@ Jetson Orin (Python)                         NUCLEO-G474RE (C++，STM32duino)
 | `ZERO` | pitch_cdeg, yaw_cdeg | `ACK` | 宣告目前姿態角度（開機擺好起始姿態後；**未 ZERO 不准 AIM**） |
 | `AIM` | pitch_cdeg, yaw_cdeg | `ACK` / `NAK` | 轉到絕對角度（梯形速度、減速停在目標） |
 | `FLY` | rpm | `ACK` / `NAK` | 飛輪目標轉速（0 = 停） |
-| `FIRE` | – | `ACK` 後送 `EV FIRED` / `NAK` | **到位穩定 + 飛輪到速才推球** |
+| `FIRE` | – | `ACK` 後送 `EV FIRED` / `NAK` | **到位穩定 + 飛輪到速才推球**。先上彈：微動開關沒被球壓著就轉彈倉 N20，壓下才停，再推彈轉一圈 |
 | `JOG` | pitch_cdps, yaw_cdps | `ACK` | 手動速度模式（需持續送，否則看門狗停） |
 | `STOP` | – | `ACK` | JOG 歸零、飛輪停、車輪停（位置保持） |
 | `DRIVE` | m1, m2, m3, m4（千分比 ±1000） | `ACK` / `NAK` | 四輪輸出（M1 左前、M2 左後、M3 右前、M4 右後；正 = 前進）。變化率限制 `WHEEL_SLEW_PER_S`；**`DRIVE_TIMEOUT_MS`（0.5 s）沒收到就停** |
@@ -66,7 +66,7 @@ Jetson Orin (Python)                         NUCLEO-G474RE (C++，STM32duino)
 | `FIRED` | 推球完成：28BYJ-48 轉完一圈（arg = 累計球數） |
 | `WDOG` | 超過 `WDOG_MS`（1 s）沒收到合法指令 → 飛輪停、JOG 停 |
 | `ESTOP` | 急停按下（1）/ 放開（0）；放開後須重新 `ZERO` |
-| `FAULT` | 保留（11/19 推彈改成開迴路步進後，韌體不再送；卡住失步偵測不到） |
+| `FAULT` | arg 1 = 彈倉逾時：N20 轉了 `MAG_TIMEOUT_MS`（3 s）還沒壓到微動開關（沒球或卡住）。N20 停、不推彈、不送 `FIRED`，下一個 `FIRE` 會再上彈一次（11/21）。推彈是開迴路步進，卡住失步偵測不到 |
 
 NAK 錯誤碼：1 FORMAT、2 UNKNOWN、3 RANGE、4 NOT_READY、5 ESTOP、6 BUSY、7 NOT_HOMED。
 STAT 旗標：0x01 READY、0x02 MOVING、0x04 FLY_OK、0x08 FIRING、0x10 ESTOP、0x20 WDOG、0x40 HOMED、0x80 JOGGING。
@@ -95,7 +95,7 @@ STAT 旗標：0x01 READY、0x02 MOVING、0x04 FLY_OK、0x08 FIRING、0x10 ESTOP�
 > 2026-11-03：車輪是四顆編碼器馬達（每轉 11 脈衝、減速比 1:56 → 輸出軸每轉 2464 計數），BTS7960 驅動。
 > 編碼器用 TIM1/TIM4/TIM5/TIM20 的 encoder mode，PWM 20 kHz；TIM2/TIM3 留給 D5/D6/D9。
 > 四片模組的 R_EN/L_EN 共用 PB12（外接 10 kΩ 下拉），收到第一個合法幀才致能、急停時拉低。
-> 摩擦輪沒有編碼器，D2/D3 預計改接彈倉的微動開關；彈倉 6 顆 N20 + TB6612 的腳位見 00_todo.md 第 2-4 步（韌體還沒寫）。
+> 摩擦輪沒有編碼器。彈倉（11/21）：1 顆 N20 接 TB6612 A 路，PWMA ← D14 (PB9)，微動開關 → D1 (PC4)，接線見 00_todo.md 第 2-4 步。
 
 ⚠️ 待硬體組確認：`PITCH/YAW_STEPS_PER_DEG`（目前 26.67 / 48.254：200 步 × 16 微步 × 減速比 3 / 38/7；俯仰是皮帶輪 20 → 60 齒，水平是行星齒輪，太陽 21 齒、外環 93 齒）、角度上下限、`FLY_MAX_RPM`、`FEED_STEPS_PER_REV`／`FEED_STEP_HZ`、方向是否要反（`*_DIR_INVERT`）。
 6 m 建議配置：**轉速計 + 電池電壓量測**都裝（「full」設定；Uno 資源足夠）。

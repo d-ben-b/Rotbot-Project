@@ -219,6 +219,28 @@
 #define FEED_ACCEL 800.0f            // 加速度（整步/s²）：0.5 s 加到 400。改 FEED_STEP_HZ 時一起改成它的 2 倍
 #endif
 
+// ===== 彈倉：N20 + TB6612 A 路 + 微動開關（11/21）=====
+// FIRE：開關沒被球壓著 → N20 往前推，開關壓下就停 → 推彈轉一圈。MAG_TIMEOUT_MS 內沒壓到 → N20 停、送 EV FAULT 1、不推彈
+#ifndef MAG_ENABLED
+#if defined(ARDUINO_ARCH_STM32)
+#define MAG_ENABLED 1
+#else
+#define MAG_ENABLED 0                // Uno 腳位不夠；0 = 當成球一直在推彈位置
+#endif
+#endif
+#ifndef PIN_MAG_PWM
+#define PIN_MAG_PWM PB9              // D14：TB6612 PWMA，HIGH = 轉、LOW = 煞車（AIN1 接 3.3 V、AIN2 接 GND、STBY 接 PB12）
+#endif
+#ifndef PIN_MAG_SW
+#define PIN_MAG_SW PC4               // D1：微動開關 NO（COM 接 GND；INPUT_PULLUP，壓下 = LOW）
+#endif
+#ifndef MAG_TIMEOUT_MS
+#define MAG_TIMEOUT_MS 3000          // N20 轉這麼久還沒壓到開關 → 沒球或卡住。實測一顆球推到位的時間後，改成約 2 倍
+#endif
+#ifndef MAG_DEBOUNCE_MS
+#define MAG_DEBOUNCE_MS 5            // 開關連續壓著這麼久才算到位（擋馬達雜訊造成的短暫 LOW）
+#endif
+
 // ===== 時序 / 安全 =====
 #ifndef SETTLE_MS
 #define SETTLE_MS 150                // 轉塔停止後等待穩定才算到位

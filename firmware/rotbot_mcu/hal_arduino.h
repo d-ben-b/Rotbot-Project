@@ -42,6 +42,10 @@ class ArduinoHal : public Hal {
   }
   void write(const char* s, size_t n) override { Serial.write((const uint8_t*)s, n); }
   float batteryVolts() override;
+#if MAG_ENABLED
+  void setMagazine(bool on) override { digitalWrite(PIN_MAG_PWM, on ? HIGH : LOW); }
+  bool ballReady() override { return digitalRead(PIN_MAG_SW) == LOW; }
+#endif
 #if WHEELS_ENABLED
   void enableWheels(bool on) override { digitalWrite(PIN_WHEEL_EN, on ? HIGH : LOW); }
   void setWheel(uint8_t i, int16_t duty) override;

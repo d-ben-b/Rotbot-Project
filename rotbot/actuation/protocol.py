@@ -16,7 +16,7 @@ FIRE 因 ACK 遺失而重送時不會連發兩球。
   STAT                                     ST,seq,flags,pitch_cdeg,yaw_cdeg,rpm,rpm_target,shots,err,crc_errors,vbat_dv
   AIM,pitch_cdeg,yaw_cdeg   轉到絕對角度      ACK,seq,0 / NAK,seq,code
   FLY,rpm                   飛輪目標轉速(0=停) ACK / NAK
-  FIRE                      到位+到速才推一球  ACK（之後送 EV FIRED）/ NAK
+  FIRE                      到位+到速才推一球  ACK（之後送 EV FIRED；彈倉逾時送 EV FAULT 1）/ NAK
   JOG,pitch_cdps,yaw_cdps   手動速度模式       ACK / NAK（需持續有指令，否則看門狗停）
   STOP                      停止 JOG、飛輪、車輪 ACK
   DRIVE,m1,m2,m3,m4         四輪輸出（千分比）  ACK / NAK（需持續送，DRIVE_TIMEOUT_MS 沒收到就停）
@@ -33,7 +33,7 @@ from dataclasses import dataclass
 from ..hal import AimCommand
 
 PROTO_VERSION = 1
-FIRE_TIMEOUT_S = 10.0         # FIRE → EV FIRED 最多等多久：推彈 28BYJ-48 一圈約 5 s（config.h 的 FEED_STEP_HZ）
+FIRE_TIMEOUT_S = 10.0         # FIRE → EV FIRED 最多等多久：彈倉上彈最多 3 s（MAG_TIMEOUT_MS）+ 推彈 28BYJ-48 一圈約 5.6 s（FEED_STEP_HZ）
 MAX_LINE = 64                 # 含 *CC\n 的最大行長（MCU 端緩衝區大小）
 TERMINATOR = b"\n"
 

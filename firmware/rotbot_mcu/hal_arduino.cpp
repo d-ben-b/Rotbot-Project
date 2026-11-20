@@ -40,6 +40,11 @@ void ArduinoHal::begin() {
   pinMode(PIN_FEED_IN4, OUTPUT);
   writeFeed(false);
   pinMode(PIN_ESTOP_SENSE, INPUT_PULLUP);
+#if MAG_ENABLED
+  pinMode(PIN_MAG_PWM, OUTPUT);
+  digitalWrite(PIN_MAG_PWM, LOW);
+  pinMode(PIN_MAG_SW, INPUT_PULLUP);
+#endif
   pinMode(PIN_LED, OUTPUT);
   digitalWrite(PIN_STEPPER_EN, HIGH);         // 先失能，App::begin() 再致能
 #if WHEELS_ENABLED

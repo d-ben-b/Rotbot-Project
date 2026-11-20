@@ -31,7 +31,7 @@ HOST_DIR = REPO_ROOT / "firmware" / "host"
 BUILD_DIR = REPO_ROOT / "build"
 SOURCES = [FW_DIR / "app.cpp", FW_DIR / "proto.cpp", HOST_DIR / "sil_main.cpp"]
 # shortcut: 模擬器的推彈約 0.35 s 一圈（實機 28BYJ-48 約 5 s，見 config.h），測試不用每發等 5 秒；要模擬比賽節奏時拿掉這兩項
-SIL_FEED = ["-DFEED_STEP_HZ=6000", "-DFEED_ACCEL=200000"]
+SIL_FEED = ["-DFEED_STEP_HZ=6000", "-DFEED_ACCEL=200000", "-DMAG_TIMEOUT_MS=500"]   # 模擬器上彈 0.2 s
 VARIANTS = {"full": ["-DFLY_HAS_TACH=1", "-DVBAT_ENABLED=1", *SIL_FEED],
             "basic": ["-DFLY_HAS_TACH=0", "-DVBAT_ENABLED=0", *SIL_FEED]}
 

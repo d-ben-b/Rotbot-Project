@@ -210,6 +210,29 @@ def test_feed_check_fires_n_shots(sil):
         assert len(times) == 2 and mcu.get_status().shots == 2
 
 
+def test_empty_magazine_faults_without_pushing(sil):
+    """彈倉沒球：N20 轉到 MAG_TIMEOUT_MS（模擬器 0.5 s）還沒壓到開關 → EV FAULT 1、不推彈；補球後照常推。"""
+    from rotbot.actuation.link import SerialMCU
+    with SerialMCU(sil.url) as mcu:
+        mcu.zero(0, 0)
+        mcu.flywheel(960)
+        mcu.wait_ready(timeout=6.0)
+        shots0 = mcu.get_status().shots
+        mcu.write_raw(b"!BALLS 0\n")
+        mark = mcu.event_mark()
+        mcu.fire()
+        assert mcu.wait_event("FAULT", timeout=2.0, since=mark).arg == 1
+        assert mcu.wait_event("FIRED", timeout=0.3, since=mark, raise_on_timeout=False) is None
+        st = mcu.get_status()
+        assert st.shots == shots0 and not st.firing
+        mcu.write_raw(b"!BALLS 1000\n")
+        mcu.wait_ready(timeout=6.0)
+        mark = mcu.event_mark()
+        mcu.fire()
+        mcu.wait_event("FIRED", timeout=2.0, since=mark)
+        assert mcu.get_status().shots == shots0 + 1
+
+
 def test_drive_full_scaled_to_wheel_max(sil):
     """DRIVE ±1000 縮放成 WHEEL_MAX_PERMILLE（1000：車輪電源 12 V）。模擬器全速 160 rpm → 約 160。"""
     import time

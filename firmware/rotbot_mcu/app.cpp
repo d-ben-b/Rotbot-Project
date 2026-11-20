@@ -84,7 +84,8 @@ void App::begin() {
   fly_target_ = 0;
   fly_i_ = 0;
   fly_ok_ = false;
-  firing_ = false;
+  firing_ = loading_ = false;
+  hal_.setMagazine(false);
   shots_ = 0;
   last_err_ = 0;
   crc_errors_ = 0;
@@ -242,13 +243,13 @@ void App::handleLine(char* line) {
     if (firing_) { sendAck(seq, proto::E_BUSY); return; }
     if (!ready()) { sendAck(seq, proto::E_NOT_READY); return; }
     firing_ = true;
-    if (feed_.pos == feed_.target) {           // 上一圈被急停打斷時不加：這一發只把那一圈轉完，推塊回到最後面
-      float want = FEED_STEPS_PER_REV + feed_rem_;
-      long n = round_l(want);
-      feed_rem_ = want - (float)n;             // 一圈不是整數步時，推塊不會越停越偏
-      feed_.target += n;
+    loading_ = feed_.pos == feed_.target;      // 上一圈被急停打斷時不上彈：推塊可能還在前面，先把那一圈轉完
+    if (loading_) {
+      load_ms_ = sw_ms_ = now;
+      hal_.setMagazine(!hal_.ballReady());     // 球已經壓著開關就不轉 N20
+    } else {
+      startPush();
     }
-    hal_.enableFeeder(true);
     sendAck(seq, proto::E_OK);
   } else if (!strcmp(cmd, "JOG")) {
     if (nargs != 2) { sendAck(seq, proto::E_FORMAT); return; }
@@ -349,8 +350,31 @@ void App::updateFlywheel(uint32_t now, float dt) {
   hal_.setFlywheelPwm((uint8_t)(pwm + 0.5f));
 }
 
-void App::updateFeeder(float dt) {
+void App::startPush() {
+  if (feed_.pos == feed_.target) {             // 上一圈被急停打斷時不加：這一發只把那一圈轉完，推塊回到最後面
+    float want = FEED_STEPS_PER_REV + feed_rem_;
+    long n = round_l(want);
+    feed_rem_ = want - (float)n;               // 一圈不是整數步時，推塊不會越停越偏
+    feed_.target += n;
+  }
+  hal_.enableFeeder(true);
+}
+
+void App::updateFeeder(uint32_t now, float dt) {
   if (!firing_) return;
+  if (loading_) {
+    if (!hal_.ballReady()) sw_ms_ = now;
+    if ((uint32_t)(now - sw_ms_) >= MAG_DEBOUNCE_MS) {          // 球壓著開關 → N20 停、推彈
+      hal_.setMagazine(false);
+      loading_ = false;
+      startPush();
+    } else if ((uint32_t)(now - load_ms_) >= MAG_TIMEOUT_MS) {  // 沒球或卡住：不推彈，等下一個 FIRE
+      hal_.setMagazine(false);
+      loading_ = firing_ = false;
+      sendEvent("FAULT", 1);
+    }
+    return;
+  }
   feed_.update(hal_, dt);
   if (!feed_.moving()) {                       // 開迴路：卡住失步也偵測不到，只能數步數
     hal_.enableFeeder(false);
@@ -401,7 +425,8 @@ void App::update() {
     estop_ = es;
     if (es) {                                    // 急停：全停、步進失能、需重新 ZERO
       enterSafe();
-      firing_ = false;
+      firing_ = loading_ = false;
+      hal_.setMagazine(false);
       hal_.enableFeeder(false);
       feed_.speed = feed_.frac = 0;              // target 不動：下一發先把這一圈轉完
       hal_.enableSteppers(false);
@@ -429,7 +454,7 @@ void App::update() {
   }
   if (pitch_.moving() || yaw_.moving()) still_since_ms_ = now;
   updateFlywheel(now, dt);
-  updateFeeder(dt);
+  updateFeeder(now, dt);
   updateWheels(now, dt);
   bool r = ready();
   if (r && !was_ready_) sendEvent("READY", shots_);

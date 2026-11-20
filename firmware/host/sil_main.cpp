@@ -6,6 +6,7 @@
 // 模擬控制（以 '!' 開頭、不經協定、不回覆）：
 //   !ESTOP 1|0     按下/放開急停      !BATT 0.85   電池電壓係數（飛輪最高轉速 × 係數）
 //   !RESET         重新開機
+//   !BALLS n       彈倉剩幾顆球（預設 1000；0 = 空彈倉，FIRE 會逾時送 EV FAULT 1）
 // 建置：python -m tools.mcu_sil --build（自動找 g++/clang++，沒有就用 pip 的 ziglang）
 #include <stdio.h>
 #include <stdlib.h>
@@ -42,7 +43,12 @@ class SimHal : public Hal {
 
   uint32_t millis() override { return (uint32_t)(elapsed_us() / 1000); }
   uint32_t micros() override { return (uint32_t)elapsed_us(); }
-  void step(uint8_t, bool) override { ++steps_; }
+  void step(uint8_t axis, bool) override {
+    ++steps_;
+    if (axis == AXIS_FEED && at_sw_ && ++push_ >= 512) at_sw_ = false;   // 推塊轉過 1/4 圈：球離開開關
+  }
+  void setMagazine(bool on) override { mag_on_ = on; }
+  bool ballReady() override { return at_sw_; }
   void enableSteppers(bool on) override { steppers_on_ = on; }
   void setFlywheelPwm(uint8_t pwm) override { fly_pwm_ = pwm; }
   int32_t flywheelRpm() override {
@@ -87,6 +93,12 @@ class SimHal : public Hal {
     if (dt <= 0) return;
     double target = fly_pwm_ / 255.0 * FLY_MAX_RPM * batt;          // 馬達穩態轉速
     rpm_ += (target - rpm_) * (1.0 - std::exp(-dt / 0.35));        // 一階延遲 τ=0.35 s
+    if (mag_on_ && !at_sw_ && balls > 0 && (mag_t_ += dt) >= 0.2) {  // N20 轉 0.2 s 把下一顆推到開關
+      at_sw_ = true;
+      --balls;
+      mag_t_ = 0;
+      push_ = 0;
+    }
     const double cpr = WHEEL_ENC_PPR * 4.0 * WHEEL_GEAR;            // 輸出軸每轉計數
     for (int i = 0; i < 4; ++i) {                                   // 車輪：輸出軸穩態 160 rpm（全速）、τ=0.15 s
       double w = wheels_on_ ? wheel_duty_[i] / 1000.0 * 160.0 * batt : 0.0;
@@ -100,6 +112,7 @@ class SimHal : public Hal {
   std::string out;
   bool estop_ = false;
   double batt = 1.0;
+  int balls = 1000;
   unsigned long steps_ = 0;
 
  private:
@@ -111,7 +124,9 @@ class SimHal : public Hal {
   std::mt19937 rng_;
   uint8_t fly_pwm_ = 0;
   bool steppers_on_ = false, wheels_on_ = false;
-  double rpm_ = 0, last_tick_ = 0;
+  bool mag_on_ = false, at_sw_ = false;   // 開機時開關上沒有球：第一發先上彈
+  long push_ = 0;
+  double rpm_ = 0, last_tick_ = 0, mag_t_ = 0;
   int16_t wheel_duty_[4] = {0, 0, 0, 0};
   double wheel_counts_[4] = {0, 0, 0, 0};
 };
@@ -124,6 +139,7 @@ static void handle_sim(SimHal& hal, App& app, const std::string& cmd) {
   std::string s(name);
   if (s == "ESTOP") hal.estop_ = v != 0;
   else if (s == "BATT" && n == 2) hal.batt = v;
+  else if (s == "BALLS" && n == 2) hal.balls = (int)v;
   else if (s == "RESET") app.begin();
 }
 
