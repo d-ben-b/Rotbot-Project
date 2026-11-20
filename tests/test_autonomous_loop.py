@@ -235,6 +235,73 @@ def test_manual_keeps_last_seen_board_until_chassis_moves():
         runner.stop()
 
 
+def test_manual_remeasures_board_after_driving():
+    """手動時往前開 0.5 m，轉塔對準中排中孔心：AI 執行緒用新畫面重新量網板，網頁標記的落點離孔心 1 cm 以內。
+
+    舊做法開車後改用設定的距離 6.9 m，標記會偏到孔心 13 cm 外（一般孔能容許 16.5 cm）。
+    """
+    import dataclasses
+
+    from rotbot.decision import ballistics
+    from rotbot.pipeline.loop import AutonomousRunner, ControlLoop
+    from rotbot.pipeline.state_machine import GameState, MatchStateMachine
+    from rotbot.teleop.aim_preview import AimPreview
+    cfg = load_config().at_start_box("left")
+    closer = dataclasses.replace(cfg, field=dataclasses.replace(cfg.field, dist_x=cfg.field.dist_x - 0.5))
+    mcu = FakeMCU()
+    twin = TwinCamera(cfg, mcu, lit_bonus=1)
+    sm = MatchStateMachine(auto_s=0.5)
+    runner = AutonomousRunner(sm, lambda: ControlLoop(
+        cfg, twin, TwinDetector(twin, noise_px=0.0), mcu, rpm=960, sm=sm,
+        is_active=lambda: sm.update() == GameState.AUTONOMOUS))
+    sm.start()
+    runner.start()
+    try:
+        end = time.monotonic() + 10.0
+        while (runner.loop is None or runner.loop.last_seen is None) and time.monotonic() < end:
+            time.sleep(0.02)
+        while not sm.request_manual() and time.monotonic() < end:
+            time.sleep(0.05)
+        R_bl, t_bl = frames.board_to_launcher(closer)
+        C = next(C for g, i, _d, C in closer.hole_centers() if (g, i) == ("main", 4))
+        p, y = (np.degrees(v) for v in ballistics.aim_at_point(R_bl @ C + t_bl, closer))
+        twin.R_bl, twin.t_bl = R_bl, t_bl                       # 底盤往前開 0.5 m
+        runner.note_chassis_moved()
+        mcu.aim(p, y)                                           # 轉塔對準中排中（新位置的正確角度）
+        while runner.board_pose() is None and time.monotonic() < end:
+            time.sleep(0.02)
+        R, t = runner.board_pose()
+    finally:
+        runner.stop()
+    assert np.linalg.norm(t - t_bl) < 0.01
+    pv = AimPreview(cfg)
+    new, old = pv.predict(p, y, 960, board=(R, t)), pv.predict(p, y, 960)
+    assert new.hole == "main#4" and np.hypot(*new.off_cm) < 1.0
+    assert np.hypot(*old.off_cm) > 10.0
+
+
+def test_remeasure_drops_result_when_chassis_moves_meanwhile():
+    """拍照到算完之間開了車（forget_board）：這次量到的位置作廢；轉塔在動時不量。"""
+    from rotbot.pipeline.loop import ControlLoop
+    cfg = load_config()
+    mcu = FakeMCU()
+    twin = TwinCamera(cfg, mcu, lit_bonus=1)
+    loop = ControlLoop(cfg, twin, TwinDetector(twin, noise_px=0.0), mcu, rpm=960)
+    mcu.aim(*loop.survey)
+    assert loop.remeasure() and loop.board_in_launcher() is not None
+
+    class DriveDuringDetect:
+        def detect(self, image):
+            loop.forget_board()
+            return TwinDetector(twin, noise_px=0.0).detect(image)
+    loop.detector = DriveDuringDetect()
+    assert not loop.remeasure() and loop.last_seen is None
+    loop.detector = TwinDetector(twin, noise_px=0.0)
+    moving = mcu.get_status
+    mcu.get_status = lambda: SimpleNamespace(**{**vars(moving()), "moving": True})
+    assert not loop.remeasure() and loop.last_seen is None
+
+
 def test_autonomous_loop_with_firmware():
     """自主迴圈 → SerialMCU → 韌體模擬器（轉塔/飛輪/推球）→ 彈道世界計分 → 線上校正。"""
     from tools.mcu_sil import CompilerNotFound, SilProcess, build

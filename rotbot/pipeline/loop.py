@@ -100,6 +100,7 @@ class ControlLoop:
         self._t_search = -1e9         # 上一輪找網板結束的時間
         self.t0 = time.monotonic()
         self.t_unseen = self.t0       # 從這時起沒有可用的網板位置（開賽、forget_board）；盲投的等待從這裡算
+        self.forgets = 0              # forget_board 次數；量網板前後比對，判斷量的期間有沒有開過車
 
     @staticmethod
     def default_survey_pose(cfg: Config) -> tuple[float, float]:
@@ -139,6 +140,7 @@ class ControlLoop:
 
     def _look(self, pitch: float, yaw: float):
         """轉到 (pitch, yaw) 拍照、偵測、整板 PnP；回傳 (SceneEstimate 或 None, 外參, 最後一張的偵測)。"""
+        n_forget = self.forgets
         st = self._move_and_settle(pitch, yaw)
         extr = frames.camera_extrinsic_at(self.cfg, st.pitch_deg, st.yaw_deg)  # 用實際角度
         dets = []
@@ -151,10 +153,22 @@ class ControlLoop:
                 dets = self.detector.detect(img)
                 est = localize_holes(dets, self.cfg, self.K)
                 if est.board_pose is not None:
-                    self.last_seen = (est, extr, time.monotonic(), self._reboots())
-                    self._check_side(est, extr)
+                    self._remember(est, extr, n_forget)
                     return est, extr, dets
         return None, extr, dets
+
+    def _remember(self, est: SceneEstimate, extr, n_forget: int) -> bool:
+        """記下量到的網板。量的期間開過車（forget_board 次數不是 n_forget，另一個執行緒）就作廢，回傳 False。
+
+        例：切手動時 AI 這一球還在拍照，操作手馬上開車；沒有這個檢查，AI 會在作廢之後寫回舊的位置。
+        用次數不用時間：Windows 的 time.monotonic() 每 15.6 ms 才跳一次，前後兩個時間可能相同。
+        """
+        self.last_seen = (est, extr, time.monotonic(), self._reboots())
+        if self.forgets != n_forget:          # forget_board 先加次數再清掉，所以兩種先後都會清掉
+            self.last_seen = None
+            return False
+        self._check_side(est, extr)
+        return True
 
     def perceive(self):
         """掃視 + 拍照 + 偵測 + 定位；回傳 (SceneEstimate, 外參, 偵測數)。失敗回傳 (None, None, n)。
@@ -257,8 +271,34 @@ class ControlLoop:
 
     def forget_board(self) -> None:
         """底盤動過（手動開車、救援時拉回起始框）：上一次看到的網板位置作廢，盲投的等待重新計時。"""
-        self.last_seen = None
+        self.forgets += 1                     # 先加次數再清掉：_remember 在另一個執行緒用它判斷結果是否作廢
         self.t_unseen = time.monotonic()
+        self.last_seen = None
+
+    def remeasure(self) -> bool:
+        """手動時（AI 沒在投）用現在的畫面重新量網板，回傳是否更新了 last_seen。
+
+        開車後預估落點改用新量到的位置，交還 AI 時也用它。外參要用拍照當下的轉塔角度，
+        所以轉塔在動就不量；拍照到算完之間又開了車（forget_board）就丟掉結果。
+        畫面裡的一般孔少於 4 個時解不出整板位姿，保留原本的 last_seen。
+        """
+        if not self._camera_alive():
+            return False
+        n_forget = self.forgets
+        st = self.mcu.get_status()
+        if st.moving:
+            return False
+        try:
+            img = self.camera.read()
+        except Exception:
+            return False
+        st2 = self.mcu.get_status()
+        if st2.moving or abs(st2.pitch_deg - st.pitch_deg) > 0.1 or abs(st2.yaw_deg - st.yaw_deg) > 0.1:
+            return False
+        est = localize_holes(self.detector.detect(img), self.cfg, self.K)
+        if est.board_pose is None:
+            return False
+        return self._remember(est, frames.camera_extrinsic_at(self.cfg, st.pitch_deg, st.yaw_deg), n_forget)
 
     def board_in_launcher(self):
         """AI 上一次量到的網板位姿換到發射點系 (R_bl, t_bl)；沒有可用的量測回 None。
@@ -353,6 +393,7 @@ class AutonomousRunner:
 
     WARN_SKIPS = 3          # 連續幾次看不到板就在網頁顯示
     WARN_ERROR_S = 3.0      # 例外（相機逾時、通訊）發生後顯示幾秒
+    REMEASURE_S = 0.5       # 手動時每隔幾秒重新量一次網板（ControlLoop.remeasure）
 
     def __init__(self, sm, make_loop, on_log=None):
         import threading
@@ -361,6 +402,7 @@ class AutonomousRunner:
         self.errors: list[str] = []
         self._error_t = -1e9
         self._match_t0 = None
+        self._t_remeasure = -1e9
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._run, name="autonomous", daemon=True)
 
@@ -374,7 +416,10 @@ class AutonomousRunner:
 
     def _run(self):
         while not self._stop.is_set():
-            if self.sm.update() != GameState.AUTONOMOUS:
+            state = self.sm.update()
+            if state != GameState.AUTONOMOUS:
+                if state == GameState.MANUAL and self.loop is not None:
+                    self._remeasure()
                 self._stop.wait(0.05)
                 continue
             if self.loop is None or self._match_t0 != self.sm.t_start:      # 新的一場
@@ -393,6 +438,17 @@ class AutonomousRunner:
                 self._stop.wait(0.1)
             if log is not None and self.on_log:
                 self.on_log(log)
+
+    def _remeasure(self) -> None:
+        """手動時每 REMEASURE_S 秒重新量網板：開車後預估落點跟著新的位置走。"""
+        now = time.monotonic()
+        if now - self._t_remeasure < self.REMEASURE_S:
+            return
+        self._t_remeasure = now
+        try:
+            self.loop.remeasure()
+        except Exception as e:                        # 通訊、偵測錯誤：記錄，下一輪再試
+            self.errors.append(f"remeasure {type(e).__name__}: {e}")
 
     def note_chassis_moved(self) -> None:
         """手動時開過車：上一次看到的網板位置作廢（TeleopServer 送出非零的 DRIVE 時呼叫）。
