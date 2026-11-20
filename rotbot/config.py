@@ -176,6 +176,7 @@ class ChassisConfig:
 class TurretConfig:
     """轉塔角度存檔：兩軸斷電後推不動時，Orin 存最後的角度，開機與急停後自動補回歸零。"""
     holds_unpowered: bool = True                 # 實測斷電推得動就改 False（回到每次手動歸零）
+    pitch_rest_deg: float | None = None          # 俯仰斷電後靠重量回到的角度；None = 斷電也停在原處
     pose_file: str = "runs/turret_pose.json"     # 相對 repo 根目錄
 
 

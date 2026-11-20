@@ -134,7 +134,8 @@ def main():
             url = sil.url
             print(f"[MCU] 韌體模擬器：{sil.banner}")
         store = open_pose_store(cfg, sim=sil is not None)
-        mcu = SerialMCU(url, pose_store=store, keep_pose_on_estop=cfg.turret.holds_unpowered).open()
+        mcu = SerialMCU(url, pose_store=store, keep_pose_on_estop=cfg.turret.holds_unpowered,
+                        pitch_rest_deg=cfg.turret.pitch_rest_deg).open()
         print(f"[MCU] 已連線 {url}，PING={mcu.ping()}")
         if sil is not None:
             mcu.zero(0.0, 0.0)                     # 模擬器開機姿態視為 (0,0)

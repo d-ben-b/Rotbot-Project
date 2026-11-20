@@ -130,6 +130,8 @@ turret:               # 轉塔角度存檔（2026-11-10：硬體組回報水平�
   holds_unpowered: true               # true：Orin 存最後的角度，開機時 MCU 沒歸零就自動補回；急停後保留角度
                                       # 實測斷電推得動就改 false：回到每次擺好姿勢按「歸零」
   pose_file: runs/turret_pose.json    # Orin 上的存檔（相對 repo 根目錄；runs/ 不進 git）
+  pitch_rest_deg: 0.0                 # 11/20 實機：俯仰斷電會靠重量自己回到 0°（質量設計）。急停、整台斷電再開後，俯仰補回這個角度；
+                                      # 水平照舊用斷電前的角度。MCU 自己重開（馬達仍有電、俯仰撐住）時不套用
 
 sim:
   dt: 0.001       # 物理積分步長 (s)

@@ -180,6 +180,27 @@ def test_short_estop_is_not_a_reboot(sil):
         assert mcu.get_status().rpm_target == 0             # 急停後不自動重開飛輪
 
 
+def test_estop_puts_pitch_back_to_rest_angle(sil):
+    """俯仰斷電會靠重量落回 0°（field.yaml turret.pitch_rest_deg）：急停後補回時，俯仰用 0°、水平照舊用步數。"""
+    import time
+
+    from rotbot.actuation.link import SerialMCU
+    with SerialMCU(sil.url, keep_pose_on_estop=True, pitch_rest_deg=0.0) as mcu:
+        mcu.zero(0, 0)
+        mcu.aim(12.0, -4.5)
+        _settle(mcu, 12.0, -4.5)
+        time.sleep(0.25)
+        mcu.write_raw(b"!ESTOP 1\n")
+        end = time.monotonic() + 2.0
+        while mcu.zero_lost == 0 and time.monotonic() < end:
+            time.sleep(0.02)
+        assert mcu.zero_lost_why == "estop"
+        assert mcu.restore_zero() == pytest.approx((0.0, -4.5), abs=0.02)
+        st = mcu.get_status()
+        assert st.homed and st.pitch_deg == pytest.approx(0.0, abs=0.02)
+        mcu.write_raw(b"!ESTOP 0\n")
+
+
 def test_feed_check_fires_n_shots(sil):
     """tools.feed_check：MCU 沒歸零也能推（先 ZERO），每發等到 EV FIRED。"""
     from rotbot.actuation.link import SerialMCU

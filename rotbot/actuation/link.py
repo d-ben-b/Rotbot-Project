@@ -87,7 +87,7 @@ class SerialMCU(ActuatorLink):
 
     def __init__(self, url: str, baud: int = 115200, timeout: float = 0.15, retries: int = 3,
                  boot_wait: float = 3.0, poll_hz: float = 10.0, on_event=None, pose_store=None,
-                 keep_pose_on_estop: bool = False):
+                 keep_pose_on_estop: bool = False, pitch_rest_deg: float | None = None):
         self.url, self.baud = url, baud
         self.timeout, self.retries = timeout, retries
         self.boot_wait, self.poll_hz = boot_wait, poll_hz
@@ -109,6 +109,7 @@ class SerialMCU(ActuatorLink):
         self.pose_before_reboot: tuple[float, float, bool] | None = None   # (俯仰, 水平, 當時在轉)
         self.pose_store = pose_store                # PoseStore（None = 不存檔）
         self.keep_pose_on_estop = keep_pose_on_estop
+        self.pitch_rest_deg = pitch_rest_deg       # 俯仰斷電後落回的角度（field.yaml turret.pitch_rest_deg）
         self.zero_lost = 0                          # 失去歸零的次數（重開機、急停）
         self.zero_lost_why = ""                     # "reboot" / "estop"；open() 用存檔補回時是 "saved"
         self.lost_pose: tuple[float, float, bool] | None = None   # 失去歸零前最後一筆角度
@@ -385,6 +386,9 @@ class SerialMCU(ActuatorLink):
             p, y = st.pitch_deg, st.yaw_deg
         else:
             p, y = pose[0] + st.pitch_deg, pose[1] + st.yaw_deg
+        if self.pitch_rest_deg is not None and why != "reboot":
+            # 急停、整台斷電：馬達沒電，俯仰靠重量落回靜止角度（存檔或步數記的是斷電前）；MCU 自己重開時馬達仍撐著
+            p = self.pitch_rest_deg + (st.pitch_deg if why == "saved" else 0.0)
         self.zero(p, y)
         if why == "reboot":
             if aim is not None:

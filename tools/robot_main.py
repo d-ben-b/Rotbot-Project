@@ -99,7 +99,8 @@ def main():
     if not url:
         ap.error("請給 --mcu 或 --sim")
     store = open_pose_store(cfg, sim=args.sim)
-    mcu = SerialMCU(url, pose_store=store, keep_pose_on_estop=cfg.turret.holds_unpowered).open()
+    mcu = SerialMCU(url, pose_store=store, keep_pose_on_estop=cfg.turret.holds_unpowered,
+                    pitch_rest_deg=cfg.turret.pitch_rest_deg).open()
     if sil is not None:
         mcu.zero(0.0, 0.0)
         mcu.aim(15.0, 0.0)
