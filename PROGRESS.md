@@ -222,6 +222,10 @@ v0 逐發抖動 ≤ 0.1 m/s；練習→比賽轉速漂移 < 1%（否則需要比
 - 第一次 SSH 登入時，Orin 讀 `/etc/bash.bashrc` 回傳 `Input/output error`，bash 結束；第二次登入正常。根目錄是 `/dev/mmcblk0p1`（SD 卡，234 G，已用 12%）。
   - 推測是 SD 卡偶爾讀取失敗或接觸不良，還沒有 `dmesg` 佐證。
   - `docs/00_todo.md` G 區：更新項目打勾，加一項 SD 卡檢查。
+- 同日 `dmesg`（使用者在 Orin 上執行）：
+  - 沒有 I/O error，也沒有 mmc 逾時。卡片是 SM256 238 GiB，SDR104。
+  - 開機時有 `EXT4-fs (mmcblk0p1): recovery complete`：上一次關機是直接斷電，ext4 用日誌修復。
+  - 結論：目前沒有硬體錯誤的紀錄，SD 卡檢查項目打勾。新增一項「關機前先 `sudo shutdown -h now`」。
 
 ### 2026-11-20（續 2）：俯仰速度改回 60°/s（跳齒原因是一顆馬達沒裝保險絲）
 
