@@ -150,13 +150,13 @@
 #define YAW_MAX_CDEG 9000L
 #endif
 #ifndef PITCH_MAX_DPS
-#define PITCH_MAX_DPS 60.0f          // 位置模式最高角速度 (deg/s)
+#define PITCH_MAX_DPS 20.0f          // 位置模式最高角速度 (deg/s)。11/20 實機：60 時轉到 60° 皮帶容易跳齒 → 20
 #endif
 #ifndef YAW_MAX_DPS
 #define YAW_MAX_DPS 30.0f            // 11/19 實機：90 時「重置」轉回 0° 太快、停的位置不對（推測失步）→ 30；還會失步就再降或把 Vref 調高
 #endif
 #ifndef PITCH_ACCEL_DPS2
-#define PITCH_ACCEL_DPS2 240.0f      // 角加速度 (deg/s^2)
+#define PITCH_ACCEL_DPS2 60.0f       // 角加速度 (deg/s^2)。11/20：240 → 60，0.33 s 加到 20°/s（JOG 也用這個加速度）
 #endif
 #ifndef YAW_ACCEL_DPS2
 #define YAW_ACCEL_DPS2 90.0f         // 11/19：360 → 90，0.33 s 加到 30°/s（JOG 也用這個加速度）

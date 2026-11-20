@@ -14,7 +14,7 @@
                                 // 0 = 常閉（NC）：平常接 GND，按下或斷線 → HIGH = 急停。NC 斷線也會停，比較安全
 #endif
 #ifndef PITCH_DIR_INVERT
-#define PITCH_DIR_INVERT 0      // 方向接反時改 1
+#define PITCH_DIR_INVERT 1      // 方向接反時改 1
 #endif
 #ifndef YAW_DIR_INVERT
 #define YAW_DIR_INVERT 0
