@@ -180,6 +180,15 @@ def test_short_estop_is_not_a_reboot(sil):
         assert mcu.get_status().rpm_target == 0             # 急停後不自動重開飛輪
 
 
+def test_feed_check_fires_n_shots(sil):
+    """tools.feed_check：MCU 沒歸零也能推（先 ZERO），每發等到 EV FIRED。"""
+    from rotbot.actuation.link import SerialMCU
+    from tools.feed_check import run
+    with SerialMCU(sil.url) as mcu:
+        times = run(mcu, shots=2, rpm=960, gap=0.1, log=lambda *_: None)
+        assert len(times) == 2 and mcu.get_status().shots == 2
+
+
 def test_drive_full_scaled_to_wheel_max(sil):
     """DRIVE ±1000 縮放成 WHEEL_MAX_PERMILLE（1000：車輪電源 12 V）。模擬器全速 160 rpm → 約 160。"""
     import time
