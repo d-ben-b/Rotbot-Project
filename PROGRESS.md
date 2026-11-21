@@ -212,6 +212,17 @@ v0 逐發抖動 ≤ 0.1 m/s；練習→比賽轉速漂移 < 1%（否則需要比
 > **append-only**：每次更新只**新增**條目、不改舊條目，保留數字與決策的演進供工作日誌追蹤。
 > 上方 §0–§8 為「最新快照」；本區為「歷史紀錄」。新到舊排列。
 
+### 2026-11-21（續 8）：相機壞了時 AI 馬上盲投（轉塔會動）；IMX296 I2C 失敗
+
+- 實機：網頁「相機 162.8 s 沒有新畫面（已自動重開 386 次）」。dmesg：`tegra-capture-vi uncorr_err: request timed out after 2500 ms`、`imx296 9-001a: imx296_write_reg: i2c write failed`；`camera_check` 報 `VIDIOC_STREAMON` `[Errno 19] No such device`。推測 CSI 排線鬆脫或損壞（I2C 也走這條排線），待重插排線確認。
+- 舊行為：相機停了、開賽後沒看到過網板時，AI 在掃視姿態等 `search.blind_after_s`（15 s）才盲投，前 15 s 轉塔不動。
+- `loop.py` `perceive()`：相機停了（`_camera_alive()` 為 False）時不等 15 s，馬上盲投。每一球轉塔先回掃視姿態、再轉到目標孔。
+  - 左框模擬：掃視姿態 (12.27°, 13.45°) ↔ 目標 main (13.06°, 6.20°)，水平每球來回約 7°。
+  - 彈倉 FAULT（沒推彈）時，下一球照樣先回掃視姿態再轉到目標，所以轉塔仍會來回。輪子不動（AI 不送 DRIVE）。
+- `test_autonomous_loop.py` 新增 `test_dead_camera_blind_shoots_at_once_and_moves_on_after_fault`：相機 age 無限大、blind_after_s 100 s、每發 FAULT → 兩步都盲投，轉塔順序是掃視、目標、掃視、目標。
+- `test_teleop.py` `test_teleop_end_to_end_with_firmware`：FIRE 後固定等 0.8 s 改成每 0.05 s 查一次、最多 2 s。`cbe2b3e` 加了 MAG_EXTRA_MS 300 ms 後，模擬器一發超過 0.8 s，完整 pytest 1 failed、148 passed、2 skipped（be8db63 之後跑）。
+- pytest：test_autonomous_loop 13 passed（完整 pytest 見下一條）。
+
 ### 2026-11-21（續 7）：Orin 沒有 ultralytics → YoloDetector 支援 .onnx（OpenCV dnn）
 
 - 使用者在 Orin 啟動 `robot_main`：`ModuleNotFoundError: No module named 'ultralytics'`。Orin 一直沒裝 torch / ultralytics（§8），沒有外網，比賽當天離線安裝風險高。

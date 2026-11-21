@@ -198,7 +198,8 @@ class ControlLoop:
             if found is not None:
                 self._misses = 0
                 return found
-        if s.blind_after_s > 0 and time.monotonic() - self.t_unseen >= s.blind_after_s and self.is_active():
+        waited = time.monotonic() - self.t_unseen >= s.blind_after_s
+        if s.blind_after_s > 0 and (waited or not self._camera_alive()) and self.is_active():   # 相機壞了：不等，馬上盲投
             self.from_blind = True
             return (*self._blind_estimate(), len(dets))
         return None, None, len(dets)

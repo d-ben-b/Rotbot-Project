@@ -188,7 +188,10 @@ def test_teleop_end_to_end_with_firmware():
                         break
                     await asyncio.sleep(0.05)
                 await ws.send_json({"t": "input", "jog": [0, 0], "fly": 2400, "fire": True})
-                await asyncio.sleep(0.8)
+                for _ in range(40):                                           # 上彈 + 多推 MAG_EXTRA_MS + 推彈，最多等 2 s
+                    if mcu.get_status().shots == 1:
+                        break
+                    await asyncio.sleep(0.05)
                 assert mcu.get_status().shots == 1
                 await ws.send_json({"t": "cmd", "name": "estop"})
                 await asyncio.sleep(0.3)

@@ -385,6 +385,37 @@ def test_blind_shot_after_search_finds_nothing():
     assert "盲投" in runner.warning()
 
 
+def test_dead_camera_blind_shoots_at_once_and_moves_on_after_fault():
+    """相機壞了：不等 blind_after_s，第一球就盲投；彈倉 FAULT（沒推彈）時轉塔仍在掃視姿態和目標之間來回。"""
+    import dataclasses
+
+    from rotbot.actuation.link import LinkError
+    from rotbot.config import SearchConfig
+    from rotbot.pipeline.loop import ControlLoop
+
+    class FaultMCU(FakeMCU):
+        aims: list = []
+
+        def aim(self, pitch, yaw):
+            super().aim(pitch, yaw)
+            self.aims.append((round(pitch, 3), round(yaw, 3)))
+
+        def wait_event(self, name, timeout, since):
+            raise LinkError("EV FAULT 1")
+
+    cfg = dataclasses.replace(load_config().at_start_box("left"), search=SearchConfig(blind_after_s=100.0))
+    mcu = FaultMCU()
+    cam = TwinCamera(cfg, mcu)
+    cam.age = lambda: float("inf")
+    loop = ControlLoop(cfg, cam, TwinDetector(cam), mcu, rpm=2400)
+    for _ in range(2):
+        with pytest.raises(LinkError):
+            loop.step()
+        assert loop.from_blind
+    survey, target = mcu.aims[0], mcu.aims[1]
+    assert mcu.aims == [survey, target, survey, target] and survey != target and mcu.shots == 2
+
+
 def test_board_pose_for_preview_matches_truth():
     """AI 看到網板後，給預估落點用的網板位姿（發射點系）和真實位置差 1 cm、0.1° 以內；底盤動過就作廢。"""
     from rotbot.pipeline.loop import ControlLoop
