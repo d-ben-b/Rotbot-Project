@@ -222,6 +222,7 @@ v0 逐發抖動 ≤ 0.1 m/s；練習→比賽轉速漂移 < 1%（否則需要比
 - `test_autonomous_loop.py` 新增 `test_dead_camera_blind_shoots_at_once_and_moves_on_after_fault`：相機 age 無限大、blind_after_s 100 s、每發 FAULT → 兩步都盲投，轉塔順序是掃視、目標、掃視、目標。
 - `test_teleop.py` `test_teleop_end_to_end_with_firmware`：FIRE 後固定等 0.8 s 改成每 0.05 s 查一次、最多 2 s。`cbe2b3e` 加了 MAG_EXTRA_MS 300 ms 後，模擬器一發超過 0.8 s，完整 pytest 1 failed、148 passed、2 skipped（be8db63 之後跑）。
 - pytest：test_autonomous_loop 13 passed（完整 pytest 見下一條）。
+- 完整 pytest（72f3436，含續 7 的 .onnx 修改）：150 passed、2 skipped。
 
 ### 2026-11-21（續 7）：Orin 沒有 ultralytics → YoloDetector 支援 .onnx（OpenCV dnn）
 
