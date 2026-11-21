@@ -212,6 +212,21 @@ v0 逐發抖動 ≤ 0.1 m/s；練習→比賽轉速漂移 < 1%（否則需要比
 > **append-only**：每次更新只**新增**條目、不改舊條目，保留數字與決策的演進供工作日誌追蹤。
 > 上方 §0–§8 為「最新快照」；本區為「歷史紀錄」。新到舊排列。
 
+### 2026-11-21（續 7）：Orin 沒有 ultralytics → YoloDetector 支援 .onnx（OpenCV dnn）
+
+- 使用者在 Orin 啟動 `robot_main`：`ModuleNotFoundError: No module named 'ultralytics'`。Orin 一直沒裝 torch / ultralytics（§8），沒有外網，比賽當天離線安裝風險高。
+- `detector.py` `YoloDetector`：權重是 `.onnx` 時改用 `cv2.dnn.readNetFromONNX`，前後處理照 ultralytics：letterbox 960×960（灰 114、置中）、BGR 轉 RGB、conf 0.25、分類別 NMS IoU 0.7；之後的 drop_non_square、drop_contained、編號、亮孔顏色備援不變。`.pt` 照舊用 ultralytics。
+- 模型用 11/06 匯出的 `models/grid_holes_yolo11n.onnx`（opset 17、輸入 1×3×960×960、輸出 1×7×18900；從目前的 .pt 匯出，.pt 與備份 md5 相同）。
+- 驗證（筆電，scratchpad 腳本）：
+  - OpenCV 4.8.0（同 JetPack）讀得進這個 .onnx。
+  - 合成驗證集 25 張：.onnx 與 .pt 每張框數、(group, idx, lit) 都相同，框座標最多差 1.48 px。
+  - 場地照片增強圖 15 張：原圖直接給時框數 pt 266、onnx 280，32 個只在 pt、46 個只在 onnx；先 letterbox 成 960×960 再給兩個模型時 257 對 257、全部配對（差 ≤ 5 px）。差異來自輸入大小（.pt 自動補到 960×736），不是解碼錯誤；舊模型在場地照片上本來就不穩（續 3）。
+  - 速度：筆電 CPU、OpenCV 4.8 每張 median 361 ms（.pt 用 GPU 15 ms）。Orin CPU 還沒量。
+- `test_detector.py` 新增 `test_onnx_decode_maps_back_and_nms_per_class`（假的 net：座標轉回原圖、分類別 NMS、conf 門檻）。
+- `docs/00_todo.md` 第 6 步：Orin 先用 .onnx，nohup 啟動加 `--weights models/grid_holes_yolo11n.onnx`。
+- pytest：test_detector 11 passed（完整 pytest 見下一條）。
+- 風險：偵測在 CPU 跑，可能和相機擷取、MJPEG 串流搶 CPU；每一球感知多約 0.4–1 s（推估）。之後裝好 torch / TensorRT 再換回 GPU。
+
 ### 2026-11-21（續 8）：彈倉壓到開關後 N20 再推 0.3 s，球才掉得下去（韌體，待燒錄）
 
 - 使用者實機：彈倉會動，但 N20 在開關壓下時就停，球停在邊緣掉不下去。

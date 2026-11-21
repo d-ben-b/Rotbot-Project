@@ -185,26 +185,59 @@ def assign_ids(dets: list[Detection]) -> None:
 
 
 class YoloDetector(Detector):
-    """Ultralytics YOLO 圓孔偵測包裝（bbox 偵測）。"""
+    """YOLO 圓孔偵測包裝（bbox 偵測）。.pt 用 ultralytics；.onnx 用 OpenCV dnn（CPU，不需 torch / ultralytics）。"""
 
     def __init__(self, weights: str, conf: float = 0.25, device: str = "0",
                  imgsz: int = 960, lit_check: LitCheckConfig = LitCheckConfig()):
-        from ultralytics import YOLO   # 延後 import：無 GPU/未安裝環境不受影響
-        self.model = YOLO(weights)
+        self.model = self.net = None
+        if str(weights).endswith(".onnx"):   # Orin 沒裝 torch / ultralytics：JetPack 內建的 OpenCV 就能跑
+            self.net = cv2.dnn.readNetFromONNX(str(weights))
+        else:
+            from ultralytics import YOLO   # 延後 import：無 GPU/未安裝環境不受影響
+            self.model = YOLO(weights)
         self.conf = conf
         self.device = device
-        self.imgsz = imgsz
+        self.imgsz = imgsz              # .onnx 是固定輸入大小，要和匯出時的 imgsz 一樣
         self.lit_check = lit_check     # 亮孔的顏色備援（mark_lit_by_color）；enabled=False 關掉
 
+    def _predict_onnx(self, image: np.ndarray):
+        """同 ultralytics 的前後處理：letterbox（灰 114、置中）→ BGR 轉 RGB → 分類別 NMS（IoU 0.7）。"""
+        h, w = image.shape[:2]
+        s = self.imgsz
+        r = min(s / h, s / w)
+        nw, nh = round(w * r), round(h * r)
+        top, left = round((s - nh) / 2 - 0.1), round((s - nw) / 2 - 0.1)
+        canvas = np.full((s, s, 3), 114, np.uint8)
+        canvas[top:top + nh, left:left + nw] = cv2.resize(image, (nw, nh), interpolation=cv2.INTER_LINEAR)
+        self.net.setInput(cv2.dnn.blobFromImage(canvas, 1 / 255.0, swapRB=True))
+        out = self.net.forward()[0].T                    # (N, 4 + 類別數)：cx, cy, w, h, 各類別分數
+        scores = out[:, 4:]
+        clss = scores.argmax(1)
+        confs = scores[np.arange(len(out)), clss]
+        keep = confs > self.conf
+        out, clss, confs = out[keep], clss[keep], confs[keep]
+        xyxy = np.column_stack([out[:, 0] - out[:, 2] / 2, out[:, 1] - out[:, 3] / 2,
+                                out[:, 0] + out[:, 2] / 2, out[:, 1] + out[:, 3] / 2])
+        shifted = xyxy + (clss * 4096.0)[:, None]        # 平移到各類別自己的區域 → 一次 NMS 就是分類別 NMS
+        idx = cv2.dnn.NMSBoxes([[x1, y1, x2 - x1, y2 - y1] for x1, y1, x2, y2 in shifted.tolist()],
+                               confs.tolist(), self.conf, 0.7)
+        idx = np.array(idx, dtype=int).reshape(-1)
+        xyxy = (xyxy[idx] - [left, top, left, top]) / r
+        xyxy = np.clip(xyxy, 0, [w, h, w, h])
+        return xyxy, clss[idx], confs[idx]
+
     def detect(self, image: np.ndarray) -> list[Detection]:
-        res = self.model.predict(image, conf=self.conf, device=self.device,
-                                 imgsz=self.imgsz, verbose=False)[0]
+        if self.net is not None:
+            xyxy, clss, confs = self._predict_onnx(image)
+        else:
+            res = self.model.predict(image, conf=self.conf, device=self.device,
+                                     imgsz=self.imgsz, verbose=False)[0]
+            if res.boxes is None:
+                return []
+            xyxy = res.boxes.xyxy.cpu().numpy()
+            clss = res.boxes.cls.cpu().numpy().astype(int)
+            confs = res.boxes.conf.cpu().numpy()
         dets: list[Detection] = []
-        if res.boxes is None:
-            return dets
-        xyxy = res.boxes.xyxy.cpu().numpy()
-        clss = res.boxes.cls.cpu().numpy().astype(int)
-        confs = res.boxes.conf.cpu().numpy()
         for (x1, y1, x2, y2), c, cf in zip(xyxy, clss, confs):
             dets.append(detection_from_bbox((x1, y1, x2, y2), c, float(cf)))
         dets = drop_contained(drop_non_square(dets, image.shape))

@@ -129,3 +129,30 @@ def test_half_hole_boxes_do_not_shift_main_ids():
     assert len(kept) == 9
     for d, idx in truth:
         assert d.idx == idx
+
+
+def test_onnx_decode_maps_back_and_nms_per_class():
+    """.onnx（OpenCV dnn）解碼：letterbox 座標轉回原圖；同類別重疊只留一個、不同類別都留；低於 conf 丟掉。"""
+    from rotbot.perception.detector import YoloDetector
+    r, top = 960 / 1456, 121            # 1456×1088 → 960×717，上下各補約 121 px
+
+    def row(x1, y1, x2, y2, cls, s):
+        sc = [0.0, 0.0, 0.0]
+        sc[cls] = s
+        return [(x1 + x2) / 2 * r, (y1 + y2) / 2 * r + top, (x2 - x1) * r, (y2 - y1) * r, *sc]
+
+    class FakeNet:
+        def setInput(self, blob):
+            assert blob.shape == (1, 3, 960, 960)
+
+        def forward(self):
+            rows = [row(100, 100, 200, 200, 0, 0.9), row(102, 101, 201, 199, 0, 0.8),
+                    row(100, 100, 200, 200, 1, 0.7), row(500, 500, 600, 600, 0, 0.1)]
+            return np.array(rows, np.float32).T[None]
+
+    det = YoloDetector.__new__(YoloDetector)
+    det.conf, det.imgsz, det.net = 0.25, 960, FakeNet()
+    xyxy, clss, confs = det._predict_onnx(np.zeros((1088, 1456, 3), np.uint8))
+    assert sorted(clss.tolist()) == [0, 1]
+    np.testing.assert_allclose(xyxy[clss == 0][0], [100, 100, 200, 200], atol=0.5)
+    assert confs[clss == 0][0] == np.float32(0.9)

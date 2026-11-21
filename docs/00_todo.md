@@ -897,6 +897,7 @@ Nucleo 在一樓，一樓只有水平（D4、D7、A3）和四個車輪。下表�
      ```
 
    - 把 `models/grid_holes_yolo11n.pt` 複製過去。模型權重不在 git 裡。
+   - 11/21：Orin 還沒裝 torch / ultralytics。先用 `models/grid_holes_yolo11n.onnx`（JetPack 內建的 OpenCV 就能跑，CPU），scp 到 Orin 的 `~/Desktop/Rotbot-Project/models/`，啟動時加 `--weights models/grid_holes_yolo11n.onnx`。
    - 序列埠權限：`sudo usermod -aG dialout $USER`，重新登入才生效。Nucleo 接上 Jetson 會是 `/dev/ttyACM0`。
 
 2. 在 Jetson 上執行 `python3 -m tools.robot_main --mcu /dev/ttyACM0`，相機會自動用 IMX296。
@@ -904,7 +905,7 @@ Nucleo 在一樓，一樓只有水平（D4、D7、A3）和四個車輪。下表�
 
      ```bash
      cd ~/Desktop/Rotbot-Project
-     nohup python3 -u -m tools.robot_main --mcu /dev/ttyACM0 > runs/robot_main.log 2>&1 &
+     nohup python3 -u -m tools.robot_main --mcu /dev/ttyACM0 --weights models/grid_holes_yolo11n.onnx > runs/robot_main.log 2>&1 &
      tail -f runs/robot_main.log      # 看輸出；Ctrl+C 只關掉 tail，程式繼續跑
      ```
 
